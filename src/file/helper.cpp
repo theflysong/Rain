@@ -8,7 +8,7 @@ bytebuffer rain::readall(const char *filepath)
 {
     size_t filesz;
     char *buffer;
-    FILE *fp = fopen(filepath, "r");
+    FILE *fp = fopen(filepath, "rb");
 
     if (fp == nullptr) {
         throw std::invalid_argument("file path doesn't exist");
@@ -22,7 +22,9 @@ bytebuffer rain::readall(const char *filepath)
         throw std::bad_alloc();
     }
 
-    assert(fread(buffer, sizeof(char), filesz, fp) == filesz);
+    size_t sz_read = fread(buffer, sizeof(char), filesz, fp);
+
+    assert(sz_read == filesz);
     fclose(fp);
 
     return std::move(bytebuffer(filesz, buffer));

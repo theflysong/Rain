@@ -2,9 +2,9 @@
 
 #include "util/util.h"
 #include "file/posinfo.h"
+#include "lexer/token_type.h"
 
 namespace rain {
-#include "lexer/token_type.h"
     struct Token {
         static mem::Pool<Token> pool;
 
@@ -29,9 +29,16 @@ namespace rain {
         void produce(int required = 1);
 
     public:
-        Lexer(bytebuffer buf)
-            : token_sequence(1000), buffer(std::move(buf))
+        struct position {
+            std::string path;
+            int line;
+            int column;
+        } pos;
+
+        Lexer(bytebuffer buf, std::string path = "")
+            : token_sequence(), token_ptr(0), buffer(std::move(buf)), pos({path, 1, 1})
         {
+            token_sequence.reserve(1000);
         }
 
         ~Lexer() = default;
@@ -58,18 +65,55 @@ namespace rain {
             return true;
         }
         
-        Token *fetch() {
+        [[nodiscard]] Token *peer() {
             if (token_ptr < 0)
-                throw std::out_of_range("The pointer of lexer is smaller than 0 when fetching a token");
+                throw std::out_of_range("The pointer of lexer is smaller than 0 when peering a token");
 
             if (token_ptr >= token_sequence.size()) {
                 produce();
             }
 
             Token *tok = token_sequence.at(token_ptr);
-            ahead(1);
-
             return tok;
+        }
+        
+        Token *next() {
+            token_ptr += 1;
+            return peer();
+        }
+    };
+
+    static inline PosInfo *makepos(Lexer::position &pos) {
+        return new PosInfo(pos.path, pos.line, pos.column);
+    }
+
+    struct LexError {
+        std::string msg;
+        PosInfo *pos;
+
+        LexError(std::string msg, PosInfo *pos)
+            : msg(msg), pos(pos)
+        {
+        }
+
+        LexError(std::string msg, Lexer::position &pos)
+            : LexError(msg, makepos(pos))
+        {
+        }
+
+        LexError(std::string expected, char got, PosInfo *pos)
+            : LexError(std::format("Expected {}, but got {}", expected, got), pos)
+        {
+        }
+
+        LexError(std::string expected, char got, Lexer::position &pos)
+            : LexError(expected, got, makepos(pos))
+        {
+        }
+
+        LexError()
+            : LexError("", nullptr)
+        {
         }
     };
 }

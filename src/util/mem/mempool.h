@@ -10,8 +10,9 @@ namespace rain {
             vector<T*> objects;
         public:
             Pool(int initial_capacity = 0)
-                : objects(initial_capacity)
+                : objects()
             {
+                objects.reserve(initial_capacity);
             }
 
             void mark(T *token) {

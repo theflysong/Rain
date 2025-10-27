@@ -36,11 +36,11 @@ namespace rain {
             return 0 <= ptr && ptr < size;
         }
 
-        [[nodiscard]] char peer() const {
-            if (! valid_ptr(ptr)) {
-                throw std::out_of_range("out of range");
+        [[nodiscard]] char peer(int offset = 0) const {
+            if (! valid_ptr(ptr + offset)) {
+                return '\0';
             }
-            return buffer[ptr];
+            return buffer[ptr + offset];
         }
 
         char pick() {
@@ -60,11 +60,30 @@ namespace rain {
 
         bool ahead(int increasement) {
             if (! valid_ptr(ptr + increasement)) {
+                if (ptr + increasement >= size) {
+                    ptr = size;
+                    return true;
+                }
                 return false;
             }
 
             ptr += increasement;
             return true;
+        }
+
+        size_t pos() const {
+            return ptr;
+        }
+
+        std::string slice(size_t start, size_t end = INT_MAX) const {
+            end = (end == INT_MAX) ? ptr : end;
+            if (end < start) {
+                throw std::invalid_argument("end position < start position");
+            }
+            char data[end - start + 1];
+            memcpy(data, buffer + start, end - start);
+            data[end - start] = 0;
+            return std::string(data);
         }
     };
 }

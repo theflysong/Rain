@@ -7,6 +7,7 @@
 #include <map>
 #include <utility>
 #include <cassert>
+#include <format>
 
 #include "util/mem/bytebuffer.h"
 #include "util/mem/mempool.h"
