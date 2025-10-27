@@ -3,8 +3,13 @@ project(Rain VERSION 0.1.0 LANGUAGES C CXX)
 
 add_executable(Rain
 src/main.cpp
+
 src/lexer/lexer.cpp
+
 src/file/posinfo.cpp
+src/file/helper.cpp
+
+src/util/mem/bytebuffer.cpp
 )
 
 include_directories(./src/)

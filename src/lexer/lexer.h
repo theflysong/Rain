@@ -18,21 +18,19 @@ namespace rain {
             pool.mark(this);
         }
     };
-    
-    class Lexer;
-}
 
-namespace rain{
     class Lexer {
     private:
         std::vector<Token *> token_sequence;
         int token_ptr;
 
+        bytebuffer buffer;
+
         void produce(int required = 1);
 
     public:
-        Lexer()
-            : token_sequence(1000)
+        Lexer(bytebuffer buf)
+            : token_sequence(1000), buffer(std::move(buf))
         {
         }
 
@@ -48,6 +46,7 @@ namespace rain{
             }
 
             token_ptr -= decreasement;
+            return true;
         }
 
         bool ahead(int increasement) {
@@ -56,6 +55,7 @@ namespace rain{
             }
 
             token_ptr += increasement;
+            return true;
         }
         
         Token *fetch() {
