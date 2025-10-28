@@ -13,6 +13,14 @@ static bool isbdigit(char ch) {
     return ch == '0' || ch == '1';
 }
 
+static bool isidalpha(char ch) {
+    return isalpha(ch) || ch == '_';
+}
+
+static bool isidalnum(char ch) {
+    return isalnum(ch) || ch == '_';
+}
+
 static bool __match__(bytebuffer &buf, std::string str) {
     bool flag = true;
     for (int i = 0 ; i < str.length() ; i ++) {
@@ -88,8 +96,6 @@ static void __skip__(bytebuffer &buf, Lexer::position &pos) {
             pos.line ++;
         }
     }
-
-    printf("Discard from line %d col %d to line %d col %d\n", pos_begin.line, pos_begin.column, pos.line, pos.column);
 }
 
 static TokenType __dec_integer_or_float__(bytebuffer &buf, Lexer::position &pos, std::vector<LexError> &err) {
@@ -237,7 +243,7 @@ static void __oct_integer__(bytebuffer &buf, Lexer::position &pos, std::vector<L
 }
 
 static void __bin_integer__(bytebuffer &buf, Lexer::position &pos, std::vector<LexError> &err) {
-    assert(__match__(buf, "0x"));
+    assert(__match__(buf, "0b"));
     buf.ahead(2);
 
     enum {
@@ -284,6 +290,231 @@ static void __bin_integer__(bytebuffer &buf, Lexer::position &pos, std::vector<L
     }
 }
 
+struct __lex_trie__ {
+    static mem::Pool<__lex_trie__> pool;
+
+    TokenType type;
+    map<char, __lex_trie__*> children;
+
+    __lex_trie__(TokenType type = TokenType::NONE)
+        : type(type), children()
+    {
+        pool.mark(this);
+    }
+} *__trie_root__ = nullptr;
+
+mem::Pool<__lex_trie__> __lex_trie__::pool = mem::Pool<__lex_trie__>(100);
+
+static void __add_keyword__(const std::string &keyword, TokenType type) {
+    __lex_trie__ *node = __trie_root__;
+    for (char ch : keyword) {
+        if (! node->children.contains(ch)) {
+            node->children[ch] = new __lex_trie__();
+        }
+        node = node->children[ch];
+    }
+    node->type = type;
+}
+
+static TokenType __lookup_keyword__(std::string &str) {
+    __lex_trie__ *node = __trie_root__;
+    for (char ch : str) {
+        if (! node->children.contains(ch)) {
+            return TokenType::NONE;
+        }
+        node = node->children[ch];
+    }
+    return node->type;
+}
+
+static void __identifier_or_keyword__(bytebuffer &buf, Lexer::position &pos, std::vector<LexError> &err) {
+    char lookahead1 = buf.peer();
+
+    assert(isidalpha(lookahead1));
+
+    while (isidalnum(lookahead1)) {
+        buf.ahead(1);
+        pos.column += 1;
+
+        lookahead1 = buf.peer();
+    }
+}
+
+static void __literal_string__(bytebuffer &buf, Lexer::position &pos, std::vector<LexError> &err) {
+    enum {
+        INITIAL         = 0,
+        TERMINATE       = 1,
+        CHARS           = 2,
+        ESCAPE          = 3
+    } state = INITIAL;
+    
+    assert(buf.peer() == '"');
+
+    while (state != TERMINATE) {
+        char lookahead = buf.peer(0);
+        int aheading = 1;
+
+        switch (state)
+        {
+        case INITIAL: {
+            // Consume opening "
+            buf.ahead(1);
+            pos.column += 1;
+            state = CHARS;
+            break;
+        }
+        case CHARS: {
+            if (lookahead == '"') {
+                state = TERMINATE;
+                break;
+            }
+            else if (lookahead == '\\') {
+                state = ESCAPE;
+                break;
+            }
+            else if (lookahead == '\0' || lookahead == '\n') {
+                err.emplace_back("Closing double quote (\") for string literal", lookahead, pos);
+                return;
+            }
+            break;
+        }
+        case ESCAPE: {
+            char lookahead_2 = buf.peer(1);
+            switch (lookahead_2) {
+            case 'a': case 'b': case 'f': case 'n':
+            case 'r': case 't': case 'v': case '?':
+            case '\\': case '\'': case '"':
+                aheading = 1;
+                break;
+            case 'x': case 'X': {
+                // Hex escape sequence \xhh
+                if (! isxdigit(buf.peer(2)) || ! isxdigit(buf.peer(3))) {
+                    err.emplace_back("Valid hex digits for hex escape sequence", lookahead_2, pos);
+                }
+                aheading = 2;
+                break;
+            }
+            case '0':
+                if (! isodigit(buf.peer(2))) {
+                    aheading = 1;
+                    break;
+                }
+            case '1': case '2': case '3': case '4':
+            case '5': case '6': case '7':
+                // Octal escape sequence \ooo
+                if (! isodigit(buf.peer(2)) || ! isodigit(buf.peer(3))) {
+                    err.emplace_back("Valid octal digits for octal escape sequence", lookahead_2, pos);
+                }
+                aheading = 3;
+                break;
+            // Unicode escape sequence \uXXXX or \UXXXXXXXX
+            case 'u': case 'U': {
+                int hex_count = (lookahead_2 == 'u') ? 4 : 8;
+                for (int i = 2 ; i < 2 + hex_count ; i ++) {
+                    if (! isxdigit(buf.peer(i))) {
+                        err.emplace_back("Valid hex digits for unicode escape sequence", buf.peer(i), pos);
+                        break;
+                    }
+                }
+                aheading = 1 + hex_count;
+            }
+            default:
+                err.emplace_back("Valid escape sequence", lookahead_2, pos);
+                break;
+            }
+            state = CHARS;
+        }
+        default:
+            break;
+        }
+
+        buf.ahead(aheading);
+        pos.column += aheading;
+    }
+}
+
+static void __literal_char__(bytebuffer &buf, Lexer::position &pos, std::vector<LexError> &err) {
+        enum {
+        INITIAL   = 0,
+        TERMINATE = 1,
+        ESCAPE    = 2
+    } state = INITIAL;
+    
+    assert(buf.peer() == '\'');
+
+    while (state != TERMINATE) {
+        char lookahead = buf.peer(0);
+        int aheading = 1;
+
+        switch (state)
+        {
+        case INITIAL: {
+            // Consume opening '
+            buf.ahead(1);
+            pos.column += 1;
+            if (lookahead == '\\') {
+                state = ESCAPE;
+            }
+            else {
+                state = TERMINATE;
+            }
+            break;
+        }
+        case ESCAPE: {
+            char lookahead_2 = buf.peer(1);
+            switch (lookahead_2) {
+            case 'a': case 'b': case 'f': case 'n':
+            case 'r': case 't': case 'v': case '?':
+            case '\\': case '\'': case '"':
+                aheading = 2;
+                break;
+            case 'x': case 'X': {
+                // Hex escape sequence \xhh
+                if (! isxdigit(buf.peer(2)) || ! isxdigit(buf.peer(3))) {
+                    err.emplace_back("Valid hex digits for hex escape sequence", lookahead_2, pos);
+                }
+                aheading = 3;
+                break;
+            }
+            case '0':
+                if (! isodigit(buf.peer(2))) {
+                    aheading = 2;
+                    break;
+                }
+            case '1': case '2': case '3': case '4':
+            case '5': case '6': case '7':
+                // Octal escape sequence \ooo
+                if (! isodigit(buf.peer(2)) || ! isodigit(buf.peer(3))) {
+                    err.emplace_back("Valid octal digits for octal escape sequence", lookahead_2, pos);
+                }
+                aheading = 4;
+                break;
+            // Unicode escape sequence \uXXXX or \UXXXXXXXX
+            case 'u': case 'U': {
+                int hex_count = (lookahead_2 == 'u') ? 4 : 8;
+                for (int i = 2 ; i < 2 + hex_count ; i ++) {
+                    if (! isxdigit(buf.peer(i))) {
+                        err.emplace_back("Valid hex digits for unicode escape sequence", buf.peer(i), pos);
+                        break;
+                    }
+                }
+                aheading = 1 + hex_count;
+            }
+            default:
+                err.emplace_back("Valid escape sequence", lookahead_2, pos);
+                break;
+            }
+            state = TERMINATE;
+        }
+        default:
+            break;
+        }
+
+        buf.ahead(aheading);
+        pos.column += aheading;
+    }
+}
+
 static TokenType __symbol__(bytebuffer &buf, Lexer::position &pos, std::vector<LexError> &err) {
     TokenType type = TokenType::NONE;
     char lookahead1 = buf.peer(), lookahead2 = buf.peer(1);
@@ -312,19 +543,80 @@ static TokenType __symbol__(bytebuffer &buf, Lexer::position &pos, std::vector<L
         break;
     case '-':
         variable = repeatable = true;
-        type = TokenType::SIGN_SUB;
+        type = lookahead2 == '>' ? TokenType::SIGN_POINTER : TokenType::SIGN_SUB;
         break;
     case '*':
-        variable = repeatable = true;
+        variable = true;
         type = TokenType::SIGN_MUL;
         break;
     case '/':
-        variable = repeatable = true;
+        variable = true;
         type = TokenType::SIGN_DIV;
         break;
     case '%':
-        variable = repeatable = true;
+        variable = true;
         type = TokenType::SIGN_MOD;
+        break;
+    case '|':
+        variable = repeatable = true;
+        type = TokenType::SIGN_OR;
+        break;
+    case '&':
+        variable = repeatable = true;
+        type = TokenType::SIGN_AND;
+        break;
+    case '^':
+        variable = true;
+        type = TokenType::SIGN_XOR;
+        break;
+    case '!':
+        variable = true;
+        type = TokenType::SIGN_NOT;
+        break;
+    case '#':
+        type = TokenType::SIGN_SHARP;
+        break;
+    case '$':
+        type = TokenType::SIGN_DOLLAR;
+        break;
+    case ',':
+        type = TokenType::SIGN_COMMA;
+        break;
+    case ';':
+        type = TokenType::SIGN_SEMICOLON;
+        break;
+    case ':':
+        type = TokenType::SIGN_COLON;
+        break;
+    case '.':
+        type = TokenType::SIGN_DOT;
+        break;
+    case '(':
+        type = TokenType::SIGN_LPAREN;
+        break;
+    case ')':
+        type = TokenType::SIGN_RPAREN;
+        break;
+    case '{':
+        type = TokenType::SIGN_LBRACE;
+        break;
+    case '}':
+        type = TokenType::SIGN_RBRACE;
+        break;
+    case '[':
+        type = TokenType::SIGN_LBRACKET;
+        break;
+    case ']':
+        type = TokenType::SIGN_RBRACKET;
+        break;
+    case '~':
+        type = TokenType::SIGN_TILDE;
+        break;
+    case '?':
+        type = TokenType::SIGN_QUESTION;
+        break;
+    case '@':
+        type = TokenType::SIGN_AT;
         break;
     default:
         break;
@@ -380,6 +672,15 @@ static TokenType __nonsymbol__(bytebuffer &buf, Lexer::position &pos, std::vecto
             type = TokenType::DEC_INTEGER;
         }
     }
+    else if (isidalpha(lookahead1)) {
+        type = TokenType::IDENTIFIER;
+    }
+    else if (lookahead1 == '"') {
+        type = TokenType::LITERAL_STRING;
+    }
+    else if (lookahead1 == '\'') {
+        type = TokenType::LITERAL_CHAR;
+    }
 
     switch(type) {
     case TokenType::DEC_INTEGER:
@@ -394,6 +695,15 @@ static TokenType __nonsymbol__(bytebuffer &buf, Lexer::position &pos, std::vecto
         break;
     case TokenType::OCT_INTEGER:
         __oct_integer__(buf, pos, err);
+        break;
+    case TokenType::IDENTIFIER:
+        __identifier_or_keyword__(buf, pos, err);
+        break;
+    case TokenType::LITERAL_STRING:
+        __literal_string__(buf, pos, err);
+        break;
+    case TokenType::LITERAL_CHAR:
+        __literal_char__(buf, pos, err);
         break;
     default:
         throw std::runtime_error("Unreachable Token Type!");
@@ -412,6 +722,13 @@ static Token *generate(bytebuffer &buf, Lexer::position &pos, std::vector<LexErr
     
     if (type == TokenType::NONE) {
        type =  __nonsymbol__(buf, pos, err);
+       if (type == TokenType::IDENTIFIER) {
+           std::string ident_str = buf.slice(begin);
+           TokenType keyword_type = __lookup_keyword__(ident_str);
+           if (keyword_type != TokenType::NONE) {
+               type = keyword_type;
+           }
+       }
     }
 
     if (type == TokenType::NONE) {
@@ -438,4 +755,55 @@ void Lexer::produce(int required)
             std::cout << std::format("[LEXER ERROR](file '{}', line {} col {}) {}", e.pos->path, e.pos->line, e.pos->column, e.msg) << std::endl;
         }
     }
+}
+
+static std::map<std::string, TokenType> __keyword_map__ = {
+   {"if",       TokenType::KEYWORD_IF},
+   {"else",     TokenType::KEYWORD_ELSE},
+   {"for",      TokenType::KEYWORD_FOR},
+   {"foreach",  TokenType::KEYWORD_FOREACH},
+   {"while",    TokenType::KEYWORD_WHILE},
+   {"return",   TokenType::KEYWORD_RETURN},
+   {"break",    TokenType::KEYWORD_BREAK},
+   {"continue", TokenType::KEYWORD_CONTINUE},
+   {"do",       TokenType::KEYWORD_DO},
+   {"byte",     TokenType::KEYWORD_BYTE},
+   {"short",    TokenType::KEYWORD_SHORT},
+   {"int",      TokenType::KEYWORD_INT},
+   {"long",     TokenType::KEYWORD_LONG},
+   {"float",    TokenType::KEYWORD_FLOAT},
+   {"double",   TokenType::KEYWORD_DOUBLE},
+   {"bool",     TokenType::KEYWORD_BOOL},
+   {"char",     TokenType::KEYWORD_CHAR},
+   {"void",     TokenType::KEYWORD_VOID},
+   {"unsigned", TokenType::KEYWORD_UNSIGNED},
+   {"signed",   TokenType::KEYWORD_SIGNED},
+   {"trait",    TokenType::KEYWORD_TRAIT},
+   {"struct",   TokenType::KEYWORD_STRUCT},
+   {"import",   TokenType::KEYWORD_IMPORT},
+   {"export",   TokenType::KEYWORD_EXPORT},
+   {"const",    TokenType::KEYWORD_CONST},
+   {"static",   TokenType::KEYWORD_STATIC},
+   {"template", TokenType::KEYWORD_TEMPLATE},
+   {"typedef",  TokenType::KEYWORD_TYPEDEF},
+   {"fn",       TokenType::KEYWORD_FN},
+   {"let",      TokenType::KEYWORD_LET},
+   {"true",     TokenType::KEYWORD_TRUE},
+   {"false",    TokenType::KEYWORD_FALSE},
+   {"null",     TokenType::KEYWORD_NULL}
+};
+
+void rain::initialize_lexer_phase() {
+    __trie_root__ = new __lex_trie__();
+
+    for (const auto &pair : __keyword_map__) {
+        std::string keyword = pair.first;
+        TokenType type = pair.second;
+
+        __add_keyword__(keyword, type);
+    }
+}
+
+void rain::terminate_lexer_phase() {
+    __lex_trie__::pool.cleanup();
 }

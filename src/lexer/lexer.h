@@ -19,6 +19,9 @@ namespace rain {
         }
     };
 
+    void initialize_lexer_phase();
+    void terminate_lexer_phase();
+
     class Lexer {
     private:
         std::vector<Token *> token_sequence;
@@ -39,9 +42,12 @@ namespace rain {
             : token_sequence(), token_ptr(0), buffer(std::move(buf)), pos({path, 1, 1})
         {
             token_sequence.reserve(1000);
+            initialize_lexer_phase();
         }
 
-        ~Lexer() = default;
+        ~Lexer() {
+            terminate_lexer_phase();
+        }
 
         [[nodiscard]] bool valid_ptr(int ptr) const {
             return ptr > 0 && ptr < token_sequence.size();

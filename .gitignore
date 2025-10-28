@@ -2,3 +2,4 @@ out/
 .vscode/
 CMakePresets.json
 .test/
+.github/
