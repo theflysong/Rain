@@ -9,6 +9,8 @@ src/main.cpp
 src/lexer/lexer.cpp
 src/lexer/token_type.cpp
 
+src/parser/ast.cpp
+
 src/file/posinfo.cpp
 src/file/helper.cpp
 

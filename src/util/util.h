@@ -8,6 +8,7 @@
 #include <utility>
 #include <cassert>
 #include <format>
+#include <functional>
 
 #include "util/mem/bytebuffer.h"
 #include "util/mem/mempool.h"

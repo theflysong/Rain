@@ -17,6 +17,15 @@ namespace rain {
         {
             pool.mark(this);
         }
+
+        std::string repr() const {
+            return std::format("Token(type: {}, content: '{}', pos: {}:{}:{})",
+                               static_cast<short>(type),
+                               content,
+                               pos != nullptr ? pos->path : "<unknown>",
+                               pos != nullptr ? pos->line : -1,
+                               pos != nullptr ? pos->column : -1);
+        }
     };
 
     void initialize_lexer_phase();
@@ -24,7 +33,6 @@ namespace rain {
 
     class Lexer {
     private:
-        std::vector<Token *> token_sequence;
         int token_ptr;
 
         bytebuffer buffer;
@@ -32,6 +40,7 @@ namespace rain {
         void produce(int required = 1);
 
     public:
+        std::vector<Token *> token_sequence;
         struct position {
             std::string path;
             int line;
@@ -50,7 +59,7 @@ namespace rain {
         }
 
         [[nodiscard]] bool valid_ptr(int ptr) const {
-            return ptr > 0 && ptr < token_sequence.size();
+            return ptr >= 0 && ptr < token_sequence.size();
         }
 
         bool rewind(int decreasement) {
