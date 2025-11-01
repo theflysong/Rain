@@ -8,6 +8,7 @@
 namespace rain {
     using TokenIter = std::vector<Token *>::const_iterator;
 
+    // 存储parse结果
     template<typename T>
     struct ParseResult {
         bool success;
@@ -24,6 +25,7 @@ namespace rain {
         }
     };
 
+    // 终结符
     template<TokenType T>
     class TerminalNode {
     protected:
@@ -49,6 +51,8 @@ namespace rain {
         }
     };
 
+    // 终结符, 但是会将读到的符号抛弃
+    // 例如 ( E ) 中将括号抛弃
     template<TokenType T>
     class DiscardTerminalNode {
     protected:
@@ -81,11 +85,14 @@ namespace rain {
         static ParseResult<ClosureNode<T>> parse(TokenIter begin, TokenIter end) {
             std::vector<T*> children;
             TokenIter current = begin;
-        
+            
+            // 未读到头
             while (current != end) {
+                // 先进行lookahead测试
                 if (! T::lookahead(current, end))
                     break;
                 auto result = T::parse(current, end);
+                // parse失败
                 if (! result.success)
                     break;
 
@@ -113,12 +120,13 @@ namespace rain {
         }
         
         static ParseResult<ConnectionNode> parse(TokenIter begin, TokenIter end) {
-            return parse_impl<0>(begin, end);
+            return parse_impl<0>(begin, end, std::make_tuple());
         }
 
     private:
         std::tuple<Nodes*...> _children;
         
+        // 从Index处进行lookahead
         template<size_t Index>
         static bool lookahead_impl(TokenIter begin, TokenIter end) {
             if constexpr (Index < sizeof...(Nodes)) {
@@ -133,60 +141,45 @@ namespace rain {
             return true;
         }
         
-        template<size_t Index>
-        static ParseResult<ConnectionNode> parse_impl(TokenIter begin, TokenIter end) {
+        // 从Index处进行parse
+        // ParsedNode说明已经parse了多少
+        template<size_t Index, typename... ParsedNodes>
+        static ParseResult<ConnectionNode> parse_impl(TokenIter begin, TokenIter end, std::tuple<ParsedNodes...>&& current_tuple) {
             if constexpr (Index == sizeof...(Nodes)) {
                 // 所有节点都解析成功，创建ConnectionNode
                 return ParseResult<ConnectionNode>(
                     true, 
-                    new ConnectionNode(std::make_tuple(static_cast<Nodes*>(nullptr)...)), 
+                    new ConnectionNode(std::move(current_tuple)),
                     begin
                 );
             } else {
+                // 提取现在应该使用的Node
                 using CurrentType = std::tuple_element_t<Index, std::tuple<Nodes...>>;
                 auto result = CurrentType::parse(begin, end);
                 
                 if (!result.success) {
+                    // 清理已经解析的节点
+                    cleanup_tuple(current_tuple);
                     return ParseResult<ConnectionNode>::failed(begin);
                 }
+                
+                // 将当前解析的节点添加到元组中，继续解析下一个
+                auto new_tuple = std::tuple_cat(
+                    std::move(current_tuple),
+                    std::make_tuple(result.val)
+                );
                 
                 // 递归解析剩余节点
-                auto next_result = parse_impl<Index + 1>(result.end, end);
-                
-                if (!next_result.success) {
-                    delete result.val; // 清理当前节点
-                    return ParseResult<ConnectionNode>::failed(begin);
-                }
-                
-                // 构建完整的子节点元组
-                auto new_tuple = build_children_tuple<Index>(
-                    result.val, 
-                    next_result.val->_children,
-                    std::make_index_sequence<sizeof...(Nodes)>{}
-                );
-                
-                delete next_result.val; // 删除临时的ConnectionNode
-                
-                return ParseResult<ConnectionNode>(
-                    true,
-                    new ConnectionNode(std::move(new_tuple)),
-                    next_result.end
-                );
+                return parse_impl<Index + 1, ParsedNodes..., CurrentType*>(result.end, end, std::move(new_tuple));
             }
         }
-
-        template<size_t Index, typename Tuple, size_t... Is>
-        static auto build_children_tuple(auto* current_val, const Tuple& next_tuple, 
-                                    std::index_sequence<Is...>) {
-            return std::make_tuple(
-                [&]() -> auto* {
-                    if constexpr (Is == Index) {
-                        return current_val;
-                    } else {
-                        return std::get<Is>(next_tuple);
-                    }
-                }()...
-            );
+        
+        // 辅助函数：清理元组中的节点指针
+        template<typename... Ts>
+        static void cleanup_tuple(const std::tuple<Ts*...>& tuple) {
+            std::apply([](auto*... ptrs) {
+                (delete ptrs, ...);
+            }, tuple);
         }
     };
     
