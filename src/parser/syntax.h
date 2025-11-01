@@ -77,20 +77,26 @@ namespace rain {
                                         result.end);
         }
 
-        std::vector<PrimaryExprNode*> get_factors() const {
-            std::vector<PrimaryExprNode*> factors;
+        // 获取子primary expressions
+        std::vector<PrimaryExprNode*> get_primary_exprs() const {
+            std::vector<PrimaryExprNode*> primExprs;
+            
+            // 第一层: primExpr + (...)*
             const auto &tpl = this->children();
-            const PrimaryExprNode* first_factor = std::get<0>(tpl);
-            factors.push_back(const_cast<PrimaryExprNode*>(first_factor));
+            // 将该层的primExpr加入
+            primExprs.push_back(const_cast<PrimaryExprNode*>(std::get<0>(tpl)));
 
+            // 第二层 (('*' | '/' | '%') primExpr)*
             const auto &closure = std::get<1>(tpl);
             for (const auto &conn_node : closure->children()) {
-                const auto &conn_tpl = conn_node->children();
-                const PrimaryExprNode* factor = std::get<1>(conn_tpl);
-                factors.push_back(const_cast<PrimaryExprNode*>(factor));
+                // 取走第二个
+                primExprs.push_back(
+                    const_cast<PrimaryExprNode*>(
+                        std::get<1>(conn_node->children())
+                    ));
             }
 
-            return factors;
+            return primExprs;
         }
     };
 
@@ -119,20 +125,45 @@ namespace rain {
                                         result.end);
         }
 
-        std::vector<MulExprNode*> get_terms() const {
-            std::vector<MulExprNode*> terms;
-            const auto &tpl = this->children();
-            const MulExprNode* first_term = std::get<0>(tpl);
-            terms.push_back(const_cast<MulExprNode*>(first_term));
+        std::vector<TokenType> get_operators() const {
+            std::vector<TokenType> operators;
+            
+            // 获取闭包
+            const auto &closure = std::get<1>(this->children());
 
-            const auto &closure = std::get<1>(tpl);
             for (const auto &conn_node : closure->children()) {
-                const auto &conn_tpl = conn_node->children();
-                const MulExprNode* term = std::get<1>(conn_tpl);
-                terms.push_back(const_cast<MulExprNode*>(term));
+                // 对闭包中的第一个node: variant<'+', '-'>
+                // 使用泛型lambda捕获其类型
+                operators.push_back(std::visit(
+                        [](auto &&terminal) {
+                          return terminal->token()->type;
+                        },
+                        std::get<0>(conn_node->children())->child()
+                    ));
             }
 
-            return terms;
+            return operators;
+        }
+
+        std::vector<MulExprNode*> get_terms() const {
+            std::vector<MulExprNode*> mulExprs;
+            
+            // 第一层: primExpr + (...)*
+            const auto &tpl = this->children();
+            // 将该层的primExpr加入
+            mulExprs.push_back(const_cast<MulExprNode*>(std::get<0>(tpl)));
+
+            // 第二层 (('*' | '/' | '%') primExpr)*
+            const auto &closure = std::get<1>(tpl);
+            for (const auto &conn_node : closure->children()) {
+                // 取走第二个
+                mulExprs.push_back(
+                    const_cast<MulExprNode*>(
+                        std::get<1>(conn_node->children())
+                    ));
+            }
+
+            return mulExprs;
         }
     };
 
