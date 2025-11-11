@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "parser/ast.h"
+#include "parser/syntax_base.h"
 #include "lexer/lexer.h"
 #include <ostream>
 #include <fstream>
@@ -98,7 +98,7 @@ public:
         } else if constexpr (has_child_method<Node>::value) {
             return visit_options(node);
         } else if constexpr (has_children_method<Node>::value) {
-            // children() can be tuple (ConnectionNode) or vector (ClosureNode)
+            // children() can be tuple (Connect) or vector (Closure)
             using ChildrenT = decltype(node->children());
             using PlainChildrenT = std::remove_cvref_t<ChildrenT>;
             if constexpr (is_tuple<PlainChildrenT>::value) {
@@ -177,7 +177,7 @@ private:
 
     template<typename T>
     int visit_vector_node(T* node) {
-        // ClosureNode: children() -> vector<T*>
+        // Closure: children() -> vector<T*>
         int id = emit_node("Closure");
         const auto &vec = node->children();
         for (const auto &child : vec) {
@@ -191,7 +191,7 @@ private:
 
     template<typename T>
     int visit_tuple_node(T* node) {
-        // ConnectionNode: children() -> tuple<...>
+        // Connect: children() -> tuple<...>
         // Use concrete type name for better label if tuple parse fails to detect
         int id = emit_node("Connection");
         const auto &tpl = node->children();
@@ -205,17 +205,17 @@ private:
         (visit_tuple_element< std::remove_pointer_t<std::tuple_element_t<Is, Tuple>> >(parent_id, std::get<Is>(tpl)), ...);
     }
 
-    // Handle a single tuple element. ElemT is the pointed-to node type (e.g., PrimaryExprNode, ClosureNode<...>, OptionsNode<...>)
+    // Handle a single tuple element. ElemT is the pointed-to node type (e.g., PrimaryExprNode, Closure<...>, Choice<...>)
     template<typename ElemT>
     void visit_tuple_element(int parent_id, ElemT* childptr) {
         if (! childptr) return;
 
-        // If ElemT has children() and that children() is a vector -> it's a ClosureNode specialization
+        // If ElemT has children() and that children() is a vector -> it's a Closure specialization
         if constexpr (has_children_method<ElemT>::value) {
             using ChildrenT = decltype(std::declval<const ElemT&>().children());
             using PlainChildrenT = std::remove_cvref_t<ChildrenT>;
             if constexpr (is_vector<PlainChildrenT>::value) {
-                // ClosureNode: link parent directly to each inner child's node
+                // Closure: link parent directly to each inner child's node
                 const auto &vec = childptr->children();
                 for (const auto &inner : vec) {
                     if (inner) {
@@ -227,7 +227,7 @@ private:
             }
         }
 
-        // If ElemT has child()/index() (OptionsNode), link parent directly to the chosen option
+        // If ElemT has child()/index() (Choice), link parent directly to the chosen option
         if constexpr (has_child_method<ElemT>::value) {
             const auto &v = childptr->child();
             std::visit([&](auto ptr){

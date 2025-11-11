@@ -1,3 +1,5 @@
 #include "parser/ast.h"
 
-using namespace rain;
+namespace rain {
+    mem::Pool<IASTNode> IASTNode::pool = mem::Pool<IASTNode>(1000);
+}

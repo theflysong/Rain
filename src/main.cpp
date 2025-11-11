@@ -3,35 +3,40 @@
 #include "lexer/lexer.h"
 #include "parser/syntax.h"
 #include "file/helper.h"
-#include "parser/ast_dot.h"
+#include "parser/syntax_dot.h"
+#include "codegen/compdag.h"
+#include "codegen/daggen.h"
+#include "codegen/exprgen.h"
+#include "codegen/dag_visualizer.h"
 
 int main(int, char**){
     rain::Lexer lexer(rain::readall("./text.txt"));
-    rain::Token *tok = lexer.peer();
-    constexpr int tokcnt = 9;
-    for (int i = 0 ; i < tokcnt ; i ++) {
-        if (tok->type & rain::TokenType::MASK_ERROR) {
-            std::cout << "Got an Error Token!" << std::endl;
-        }
-        else {
-            std::cout << std::format("[{}](type: {}, content: \"{}\")", i + 1, tok->type, tok->content) << std::endl;
-        }
-        if (i < tokcnt - 1)
-            tok = lexer.next();
+
+    lexer.lex_all();
+    lexer.token_sequence.push_back(new rain::Token(rain::TokenType::ENDMARK, "$", rain::makepos(lexer.pos)));
+    std::cout << "Tokens:" << std::endl;
+
+    for (const auto &tok : lexer.token_sequence) {
+        std::cout << tok->repr() << std::endl;
     }
 
-    assert(lexer.rewind(tokcnt - 1));
-
-    auto res = rain::ExprNode::parse(lexer.token_sequence.begin(), lexer.token_sequence.end());
+    auto res = rain::AddExprNode::parse(lexer.token_sequence.begin(), lexer.token_sequence.end());
+    auto *root_expr = res.val;
 
     if (res.success) {
         std::cout << "Parsed successfully!" << std::endl;
         std::cout << res.end - lexer.token_sequence.begin() << std::endl;
-        rain::generate_ast_dot_to_file("ast.dot", res.val);
+        rain::generate_ast_dot_to_file("ast.dot", root_expr);
     } else {
         std::cout << "Parse failed!" << std::endl;
     }
 
+    rain::CompDAG dag;
+    
+    rain::CompNode *root = rain::general_expr_gen(root_expr, dag);
+    rain::DAGVisualizer::export_to_dot(dag, "dag.dot");
+
+    rain::IASTNode::pool.cleanup();
     rain::Token::pool.cleanup();
     rain::PosInfo::pool.cleanup();
 

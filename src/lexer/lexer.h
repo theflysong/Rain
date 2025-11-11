@@ -20,7 +20,7 @@ namespace rain {
 
         std::string repr() const {
             return std::format("Token(type: {}, content: '{}', pos: {}:{}:{})",
-                               static_cast<short>(type),
+                               to_string(type),
                                content,
                                pos != nullptr ? pos->path : "<unknown>",
                                pos != nullptr ? pos->line : -1,
@@ -79,6 +79,10 @@ namespace rain {
             token_ptr += increasement;
             return true;
         }
+
+        bool eof() const {
+            return buffer.eof();
+        }
         
         [[nodiscard]] Token *peer() {
             if (token_ptr < 0)
@@ -95,6 +99,12 @@ namespace rain {
         Token *next() {
             token_ptr += 1;
             return peer();
+        }
+
+        void lex_all() {
+            while (! eof()) {
+                produce();
+            }
         }
     };
 

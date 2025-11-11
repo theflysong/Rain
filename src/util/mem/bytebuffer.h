@@ -85,5 +85,9 @@ namespace rain {
             data[end - start] = 0;
             return std::string(data);
         }
+
+        bool eof() const {
+            return ptr >= size;
+        }
     };
 }
