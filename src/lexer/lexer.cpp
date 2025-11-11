@@ -544,6 +544,9 @@ static TokenType __symbol__(bytebuffer &buf, Lexer::position &pos, std::vector<L
     case '-':
         variable = repeatable = true;
         type = lookahead2 == '>' ? TokenType::SIGN_POINTER : TokenType::SIGN_SUB;
+        if (type == TokenType::SIGN_POINTER) {
+            aheading ++;
+        }
         break;
     case '*':
         variable = true;
@@ -758,39 +761,7 @@ void Lexer::produce(int required)
 }
 
 static std::map<std::string, TokenType> __keyword_map__ = {
-   {"if",       TokenType::KEYWORD_IF},
-   {"else",     TokenType::KEYWORD_ELSE},
-   {"for",      TokenType::KEYWORD_FOR},
-   {"foreach",  TokenType::KEYWORD_FOREACH},
-   {"while",    TokenType::KEYWORD_WHILE},
-   {"return",   TokenType::KEYWORD_RETURN},
-   {"break",    TokenType::KEYWORD_BREAK},
-   {"continue", TokenType::KEYWORD_CONTINUE},
-   {"do",       TokenType::KEYWORD_DO},
-   {"byte",     TokenType::KEYWORD_BYTE},
-   {"short",    TokenType::KEYWORD_SHORT},
-   {"int",      TokenType::KEYWORD_INT},
-   {"long",     TokenType::KEYWORD_LONG},
-   {"float",    TokenType::KEYWORD_FLOAT},
-   {"double",   TokenType::KEYWORD_DOUBLE},
-   {"bool",     TokenType::KEYWORD_BOOL},
-   {"char",     TokenType::KEYWORD_CHAR},
-   {"void",     TokenType::KEYWORD_VOID},
-   {"unsigned", TokenType::KEYWORD_UNSIGNED},
-   {"signed",   TokenType::KEYWORD_SIGNED},
-   {"trait",    TokenType::KEYWORD_TRAIT},
-   {"struct",   TokenType::KEYWORD_STRUCT},
-   {"import",   TokenType::KEYWORD_IMPORT},
-   {"export",   TokenType::KEYWORD_EXPORT},
-   {"const",    TokenType::KEYWORD_CONST},
-   {"static",   TokenType::KEYWORD_STATIC},
-   {"template", TokenType::KEYWORD_TEMPLATE},
-   {"typedef",  TokenType::KEYWORD_TYPEDEF},
-   {"fn",       TokenType::KEYWORD_FN},
-   {"let",      TokenType::KEYWORD_LET},
-   {"true",     TokenType::KEYWORD_TRUE},
-   {"false",    TokenType::KEYWORD_FALSE},
-   {"null",     TokenType::KEYWORD_NULL}
+   {"let",      TokenType::KEYWORD_LET}
 };
 
 void rain::initialize_lexer_phase() {

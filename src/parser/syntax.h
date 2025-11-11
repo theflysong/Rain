@@ -9,277 +9,338 @@ namespace rain {
         return (const IExpr *)(node);
     }
 
-    class LiteralExprNode : public ILiteralExpr,
-    public Choice<
-        Terminal<TokenType::DEC_INTEGER>,
-        Terminal<TokenType::HEX_INTEGER>,
-        Terminal<TokenType::OCT_INTEGER>,
-        Terminal<TokenType::BIN_INTEGER>,
-        Terminal<TokenType::FLOAT>,
-        Terminal<TokenType::LITERAL_STRING>,
-        Terminal<TokenType::LITERAL_CHAR>
-    > {
-    public:
-        using Choice::Choice;
+    // 前向声明
+    class TypeNode;
+    class ExprNode;
 
-        template <typename Base>
-        LiteralExprNode(Base *base) : ILiteralExpr(), Choice(*base) {
-        }
-        
-        static bool lookahead(TokenIter begin, TokenIter end) {
-            return Choice::lookahead(begin, end);
-        }
-        
-        static ParseResult<LiteralExprNode> parse(TokenIter begin, TokenIter end) {
-            auto result = Choice::parse(begin, end);
-            return ParseResult<LiteralExprNode>(result.success, 
-                                        new LiteralExprNode(result.val), 
-                                        result.end);
-        }
-
-        virtual const Token * get_literal() const override {
-            return std::visit(
-                [](auto &&child) -> const Token* {
-                    return child->token();
-                },
-                this->child());
-        }
-    };
-
-    class MembleAccessExprNode : public IMemberAccessExpr,
-    public Connect<
-        Terminal<TokenType::IDENTIFIER>,
-        Closure<Connect<
-            DiscardTerminal<TokenType::SIGN_DOT>,
-            Terminal<TokenType::IDENTIFIER>
-        >>
-    > {
-    public:
-        using Connect::Connect;
-
-        template <typename Base>
-        MembleAccessExprNode(Base *base) : IMemberAccessExpr(), Connect(*base) {
-        }
-        
-        static bool lookahead(TokenIter begin, TokenIter end) {
-            return Connect::lookahead(begin, end);
-        }
-
-        static ParseResult<MembleAccessExprNode> parse(TokenIter begin, TokenIter end) {
-            auto result = Connect::parse(begin, end);
-            return ParseResult<MembleAccessExprNode>(result.success,
-                                        new MembleAccessExprNode(result.val),
-                                        result.end);
-        }
-
-        virtual std::vector<const IExpr *> get_sub_exprs() const override {
-            return {};
-        }
-
-        virtual std::vector<OperatorTypes> get_operators() const override {
-            return {};
-        }
-
-        virtual std::string get_member_name() const override {
-            std::string names = std::get<0>(this->children())->token()->content;
-            const auto &closure = std::get<1>(this->children());
-            for (const auto &rest : closure->children()) {
-                names += "." + std::get<1>(rest->children())->token()->content;
-            }
-            return names;
-        }
-    };
-
-    using PrimaryExprProduction3 = Connect<
-        DiscardTerminal<TokenType::SIGN_LPAREN>,
-        ExprNode,
-        DiscardTerminal<TokenType::SIGN_RPAREN>
-    >;
-    class PrimaryExprNode : public IPrimaryExpr,
-    public Choice<
-        LiteralExprNode,
-        MembleAccessExprNode,
-        PrimaryExprProduction3
-    >  {
-    public:
-        using Choice::Choice;
-
-        template <typename Base>
-        PrimaryExprNode(Base *base) : IPrimaryExpr(), Choice(*base) {
-        }
-        
-        static bool lookahead(TokenIter begin, TokenIter end) {
-            return Choice::lookahead(begin, end);
-        }
-        
-        static ParseResult<PrimaryExprNode> parse(TokenIter begin, TokenIter end) {
-            auto result = Choice::parse(begin, end);
-            return ParseResult<PrimaryExprNode>(result.success, 
-                                        new PrimaryExprNode(result.val), 
-                                        result.end);
-        }
-        
-        virtual std::vector<const IExpr *> get_sub_exprs() const override {
-            const IExpr *subExpr = std::visit(
-                [](auto &&child) -> const IExpr* {
-                    if constexpr (
-                        std::is_same_v<std::decay_t<decltype(child)>, PrimaryExprProduction3*>
-                    ) {
-                        return IExpr_cast(std::get<1>(child->children()));
-                    } else {
-                        return IExpr_cast(child);
-                    }
-                },
-                this->child());
-            return {subExpr};
-        }
-
-        virtual std::vector<OperatorTypes> get_operators() const override {
-            return {};
-        }
-    };
-
-    class MulExprNode : public IMulExpr,
-    public Connect<
-        PrimaryExprNode,
-        Closure<Connect<
-            Choice<
-                Terminal<TokenType::SIGN_MUL>,
-                Terminal<TokenType::SIGN_DIV>,
-                Terminal<TokenType::SIGN_MOD>
-            >,
-            PrimaryExprNode
-        >>
-    > {
-    public:
-        using Connect::Connect;
-
-        template <typename Base>
-        MulExprNode(Base *base) : IMulExpr(), Connect(*base) {
-        }
-        
-        static bool lookahead(TokenIter begin, TokenIter end) {
-            return Connect::lookahead(begin, end);
-        }
-        
-        static ParseResult<MulExprNode> parse(TokenIter begin, TokenIter end) {
-            auto result = Connect::parse(begin, end);
-            return ParseResult<MulExprNode>(result.success, 
-                                        new MulExprNode(result.val), 
-                                        result.end);
-        }
-
-        virtual std::vector<const IExpr *> get_sub_exprs() const override {
-            std::vector<const IExpr *> subExprs;
-            subExprs.push_back(IExpr_cast(std::get<0>(this->children())));
-
-            const auto &closure = std::get<1>(this->children());
-            for (const auto &rest : closure->children()) {
-                subExprs.push_back(IExpr_cast(std::get<1>(rest->children())));
-            }
-            return subExprs;
-        }
-
-        virtual std::vector<OperatorTypes> get_operators() const override {
-            std::vector<OperatorTypes> ops;
-            const auto &closure = std::get<1>(this->children());
-            for (const auto &rest : closure->children()) {
-                ops.push_back(std::visit(
-                    [&](auto &&child) -> OperatorTypes {
-                    switch (child->token()->type) {
-                        case TokenType::SIGN_MUL:
-                            return OperatorTypes::MUL;
-                        case TokenType::SIGN_DIV:
-                            return OperatorTypes::DIV;
-                        case TokenType::SIGN_MOD:
-                            return OperatorTypes::MOD;
-                        default:
-                            return OperatorTypes::NONE;
-                    }}, std::get<0>(rest->children())->child()));
-
-            }
-            return ops;
-        }
-    };
-
-    class AddExprNode :  public IAddExpr,
-    public Connect<
-        MulExprNode,
-        Closure<Connect<
-            Choice<
-                Terminal<TokenType::SIGN_ADD>,
-                Terminal<TokenType::SIGN_SUB>
-            >,
-            MulExprNode
-        >>
-    >
+    class LiteralNode :
+    public Terminal<TokenType::DEC_INTEGER>
     {
     public:
+        using Terminal::Terminal;
+
+        template <typename Base>
+        LiteralNode(Base *base) : Terminal(*base) {
+        }
+        
+        static bool lookahead(TokenIter begin, TokenIter end) {
+            return Terminal::lookahead(begin, end);
+        }
+
+        static ParseResult<LiteralNode> parse(TokenIter begin, TokenIter end) {
+            auto result = Terminal::parse(begin, end);
+            if (!result.success) {
+                return ParseResult<LiteralNode>::failed(end);
+            }
+            return ParseResult<LiteralNode>(result.success, 
+                                                new LiteralNode(result.val), 
+                                                result.end);
+        }
+    };
+
+    class IdentifierNode :
+    public Terminal<TokenType::IDENTIFIER>
+    {
+    public:
+        using Terminal::Terminal;
+
+        template <typename Base>
+        IdentifierNode(Base *base) : Terminal(*base) {
+        }
+        
+        static bool lookahead(TokenIter begin, TokenIter end) {
+            return Terminal::lookahead(begin, end);
+        }
+
+        static ParseResult<IdentifierNode> parse(TokenIter begin, TokenIter end) {
+            auto result = Terminal::parse(begin, end);
+            if (!result.success) {
+                return ParseResult<IdentifierNode>::failed(end);
+            }
+            return ParseResult<IdentifierNode>(result.success, 
+                                                new IdentifierNode(result.val), 
+                                                result.end);
+        }
+    };
+
+    class TypeNode :
+    public Choice<
+        Connect<
+            Terminal<TokenType::SIGN_MUL>,
+            Closure<Connect<
+                Terminal<TokenType::SIGN_POINTER>,
+                TypeNode
+            >>
+        >,
+        Connect<
+            Terminal<TokenType::SIGN_LPAREN>,
+            TypeNode,
+            Terminal<TokenType::SIGN_RPAREN>,
+            Closure<Connect<
+                Terminal<TokenType::SIGN_POINTER>,
+                TypeNode
+            >>
+        >
+    > {
+    public:
+        using Choice::Choice;
+
+        template <typename Base>
+        TypeNode(Base *base) : Choice(*base) {
+        }
+        
+        static bool lookahead(TokenIter begin, TokenIter end) {
+            return Choice::lookahead(begin, end);
+        }
+        
+        static ParseResult<TypeNode> parse(TokenIter begin, TokenIter end) {
+            auto result = Choice::parse(begin, end);
+            if (!result.success) {
+                return ParseResult<TypeNode>::failed(end);
+            }
+            return ParseResult<TypeNode>(result.success, 
+                                        new TypeNode(result.val), 
+                                        result.end);
+        }
+    };
+
+    class AbstractionNode :
+    public Connect<
+        DiscardTerminal<TokenType::SIGN_DOLLAR>, 
+        DiscardTerminal<TokenType::SIGN_LPAREN>, 
+        IdentifierNode,
+        DiscardTerminal<TokenType::SIGN_COLON>,
+        TypeNode,
+        DiscardTerminal<TokenType::SIGN_RPAREN>,
+        DiscardTerminal<TokenType::SIGN_DOT>,
+        ExprNode
+    > {
+    public:
         using Connect::Connect;
 
         template <typename Base>
-        AddExprNode(Base *base) : IAddExpr(), Connect(*base) {
+        AbstractionNode(Base *base) : Connect(*base) {
         }
         
         static bool lookahead(TokenIter begin, TokenIter end) {
             return Connect::lookahead(begin, end);
         }
-        
-        static ParseResult<AddExprNode> parse(TokenIter begin, TokenIter end) {
+
+        static ParseResult<AbstractionNode> parse(TokenIter begin, TokenIter end) {
             auto result = Connect::parse(begin, end);
-            return ParseResult<AddExprNode>(result.success, 
-                                        new AddExprNode(result.val), 
-                                        result.end);
-        }
-
-        virtual std::vector<const IExpr *> get_sub_exprs() const override {
-            std::vector<const IExpr *> subExprs;
-            subExprs.push_back(IExpr_cast(std::get<0>(this->children())));
-            
-            const auto &closure = std::get<1>(this->children());
-            for (const auto &rest : closure->children()) {
-                subExprs.push_back(IExpr_cast(std::get<1>(rest->children())));
+            if (!result.success) {
+                return ParseResult<AbstractionNode>::failed(end);
             }
-            return subExprs;
+            return ParseResult<AbstractionNode>(result.success, 
+                                                new AbstractionNode(result.val), 
+                                                result.end);
+        }
+    };
+    class ApplicationNode :
+    public Connect<
+        DiscardTerminal<TokenType::SIGN_SHARP>,
+        IdentifierNode,
+        Closure<Connect<
+            DiscardTerminal<TokenType::SIGN_LPAREN>,
+            ExprNode,
+            DiscardTerminal<TokenType::SIGN_RPAREN>
+        >>
+    > {
+    public:
+        using Connect::Connect;
+
+        template <typename Base>
+        ApplicationNode(Base *base) : Connect(*base) {
         }
 
-        virtual std::vector<OperatorTypes> get_operators() const override {
-            std::vector<OperatorTypes> ops;
-            const auto &closure = std::get<1>(this->children());
-            for (const auto &rest : closure->children()) {
-                ops.push_back(std::visit(
-                    [&](auto &&child) -> OperatorTypes {
-                    switch (child->token()->type) {
-                        case TokenType::SIGN_ADD:
-                            return OperatorTypes::ADD;
-                        case TokenType::SIGN_SUB:
-                            return OperatorTypes::SUB;
-                        default:
-                            return OperatorTypes::NONE;
-                    }}, std::get<0>(rest->children())->child()));
+        static bool lookahead(TokenIter begin, TokenIter end) {
+            return Connect::lookahead(begin, end);
+        }
 
+        static ParseResult<ApplicationNode> parse(TokenIter begin, TokenIter end) {
+            auto result = Connect::parse(begin, end);
+            if (!result.success) {
+                return ParseResult<ApplicationNode>::failed(end);
             }
-            return ops;
-        }
-
-        virtual ExpressionTypes get_expr_type() const override {
-            return IAddExpr::get_expr_type();
+            return ParseResult<ApplicationNode>(result.success, 
+                                                new ApplicationNode(result.val), 
+                                                result.end);
         }
     };
 
-    class ExprNode : public AddExprNode {
+    class InduceExprNode :
+    public Connect<
+        DiscardTerminal<TokenType::SIGN_AT>,
+        IdentifierNode,
+        DiscardTerminal<TokenType::SIGN_LBRACKET>,
+        ExprNode,
+        DiscardTerminal<TokenType::SIGN_COMMA>,
+        AbstractionNode,
+        DiscardTerminal<TokenType::SIGN_RBRACKET>
+    > {
     public:
-        using AddExprNode::AddExprNode;
-        
-        static bool lookahead(TokenIter begin, TokenIter end) {
-            return AddExprNode::lookahead(begin, end);
+        using Connect::Connect;
+
+        template <typename Base>
+        InduceExprNode(Base *base) : Connect(*base) {
         }
-        
+
+        static bool lookahead(TokenIter begin, TokenIter end) {
+            return Connect::lookahead(begin, end);
+        }
+
+        static ParseResult<InduceExprNode> parse(TokenIter begin, TokenIter end) {
+            auto result = Connect::parse(begin, end);
+            if (!result.success) {
+                return ParseResult<InduceExprNode>::failed(end);
+            }
+            return ParseResult<InduceExprNode>(result.success,
+                                              new InduceExprNode(result.val),
+                                              result.end);
+        }
+    };
+
+    class PrimExprNode :
+    public Choice<
+        IdentifierNode,
+        LiteralNode,
+        Connect<
+            DiscardTerminal<TokenType::SIGN_LPAREN>,
+            ExprNode,
+            DiscardTerminal<TokenType::SIGN_RPAREN>
+        >,
+        InduceExprNode,
+        ApplicationNode
+    > {
+    public:
+        using Choice::Choice;
+
+        template <typename Base>
+        PrimExprNode(Base *base) : Choice(*base) {
+        }
+
+        static bool lookahead(TokenIter begin, TokenIter end) {
+            return Choice::lookahead(begin, end);
+        }
+
+        static ParseResult<PrimExprNode> parse(TokenIter begin, TokenIter end) {
+            auto result = Choice::parse(begin, end);
+            if (!result.success) {
+                return ParseResult<PrimExprNode>::failed(end);
+            }
+            return ParseResult<PrimExprNode>(result.success,
+                                              new PrimExprNode(result.val),
+                                              result.end);
+        }
+    };
+
+    class SuccExprNode :
+    public Connect<
+        Closure<Terminal<TokenType::SIGN_INC>>,
+        PrimExprNode
+    > {
+    public:
+        using Connect::Connect;
+
+        template <typename Base>
+        SuccExprNode(Base *base) : Connect(*base) {
+        }
+
+        static bool lookahead(TokenIter begin, TokenIter end) {
+            return Connect::lookahead(begin, end) || PrimExprNode::lookahead(begin, end);
+        }
+
+        static ParseResult<SuccExprNode> parse(TokenIter begin, TokenIter end) {
+            auto result = Connect::parse(begin, end);
+            if (!result.success) {
+                return ParseResult<SuccExprNode>::failed(end);
+            }
+            return ParseResult<SuccExprNode>(result.success,
+                                              new SuccExprNode(result.val),
+                                              result.end);
+        }
+    };
+
+    class ExprNode :
+    public Choice<
+        AbstractionNode,
+        SuccExprNode
+    > {
+    public:
+        using Choice::Choice;
+
+        template <typename Base>
+        ExprNode(Base *base) : Choice(*base) {
+        }
+
+        static bool lookahead(TokenIter begin, TokenIter end) {
+            return Choice::lookahead(begin, end);
+        }
+
         static ParseResult<ExprNode> parse(TokenIter begin, TokenIter end) {
-            auto result = AddExprNode::parse(begin, end);
-            return ParseResult<ExprNode>(result.success, 
-                                        static_cast<ExprNode*>(result.val), 
-                                        result.end);
+            auto result = Choice::parse(begin, end);
+            if (!result.success) {
+                return ParseResult<ExprNode>::failed(end);
+            }
+            return ParseResult<ExprNode>(result.success,
+                                              new ExprNode(result.val),
+                                              result.end);
+        }
+    };
+
+    class LetStmtNode :
+    public Connect<
+        DiscardTerminal<TokenType::KEYWORD_LET>,
+        IdentifierNode,
+        DiscardTerminal<TokenType::SIGN_COLON>,
+        TypeNode,
+        DiscardTerminal<TokenType::SIGN_ASSIGN>,
+        ExprNode,
+        DiscardTerminal<TokenType::SIGN_SEMICOLON>
+    > {
+    public:
+        using Connect::Connect;
+
+        template <typename Base>
+        LetStmtNode(Base *base) : Connect(*base) {
+        }
+
+        static bool lookahead(TokenIter begin, TokenIter end) {
+            return Connect::lookahead(begin, end);
+        }
+
+        static ParseResult<LetStmtNode> parse(TokenIter begin, TokenIter end) {
+            auto result = Connect::parse(begin, end);
+            if (!result.success) {
+                return ParseResult<LetStmtNode>::failed(end);
+            }
+            return ParseResult<LetStmtNode>(result.success,
+                                              new LetStmtNode(result.val),
+                                              result.end);
+        }
+    };
+
+    class ProgramNode :
+    public Closure<LetStmtNode> {
+    public:
+        using Closure::Closure;
+
+        template <typename Base>
+        ProgramNode(Base *base) : Closure(*base) {
+        }
+
+        static bool lookahead(TokenIter begin, TokenIter end) {
+            return Closure::lookahead(begin, end);
+        }
+
+        static ParseResult<ProgramNode> parse(TokenIter begin, TokenIter end) {
+            auto result = Closure::parse(begin, end);
+            if (!result.success) {
+                return ParseResult<ProgramNode>::failed(end);
+            }
+            return ParseResult<ProgramNode>(result.success,
+                                              new ProgramNode(result.val),
+                                              result.end);
         }
     };
 }

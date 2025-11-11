@@ -102,6 +102,7 @@ namespace rain {
         KEYWORD_TRUE     = MASK_KEYWORD | 0x001E,         // true
         KEYWORD_FALSE    = MASK_KEYWORD | 0x001F,         // false
         KEYWORD_NULL     = MASK_KEYWORD | 0x0020,         // null
+        KEYWORD_LAMBDA   = MASK_KEYWORD | 0x0021,         // lambda
         ENDMARK          = 0x2000
     };
     
@@ -210,6 +211,7 @@ namespace rain {
         case TokenType::KEYWORD_FN: return "KEYWORD_FN";
         case TokenType::KEYWORD_LET: return "KEYWORD_LET";
         case TokenType::ENDMARK: return "ENDMARK";
+        case TokenType::SIGN_POINTER: return "SIGN_POINTER";
         }
         return "UNKNOWN_TOKEN";
     }

@@ -65,12 +65,24 @@ namespace rain {
         static ParseResult<DiscardTerminal> parse(TokenIter begin, TokenIter end) {
             Token *tok = *begin;
             if (begin != end && (*begin)->type == T) {
+                std::cout << "Parsed Terminal: " << tok->repr() << std::endl;
                 return ParseResult<DiscardTerminal>(true, nullptr, begin + 1);
             }
             return ParseResult<DiscardTerminal>::failed(end);
         }
     };
     
+    class Epsilon {
+    protected:
+    public:
+        static bool lookahead(TokenIter begin, TokenIter end) {
+            return true;
+        }
+        static ParseResult<Epsilon> parse(TokenIter begin, TokenIter end) {
+            return ParseResult<Epsilon>(true, nullptr, begin + 1);
+        }
+    };
+
     // 闭包节点 (0次或多次)
     template<typename T>
     class Closure {
