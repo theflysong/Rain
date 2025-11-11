@@ -2,12 +2,13 @@
 
 #include "util/util.h"
 #include "parser/ast.h"
+#include "codegen/codegen.h"
 
 namespace rain {
     class CompDAG;
 
     enum class DAGNodeTypes {
-        LITERAL = 0, VARIABLE,
+        SYMBOL = 0,
         ADD, SUB, MUL, DIV, MOD,
         AND, OR, NOT, XOR, NEG,
         EQ, NEQ, LT, GT, LEQ, GEQ,
@@ -38,22 +39,11 @@ namespace rain {
         virtual ~CompNode() = default;
     };
 
-    class LiteralNode : public CompNode {
+    class SymbolNode : public CompNode {
     public:
-        //TODO: 将其改为Symbol
-        const Token *_value;
-        LiteralNode(const CompDAG &dag, Token *value) : 
-            CompNode(dag, DAGNodeTypes::LITERAL, {}), _value(value)
-        {
-        }
-    };
-
-    class VariableNode : public CompNode {
-    public:
-        //TODO: 将其改为Symbol
-        std::string name;
-        VariableNode(const CompDAG &dag, const std::string &name) : 
-            CompNode(dag, DAGNodeTypes::VARIABLE, {}), name(name)
+        const SymbolEntry * _symbol;
+        SymbolNode(const CompDAG &dag, const SymbolEntry *symbol) : 
+            CompNode(dag, DAGNodeTypes::SYMBOL, {}), _symbol(symbol)
         {
         }
     };
@@ -61,9 +51,9 @@ namespace rain {
     class CompDAG {
     public:
         std::vector<CompNode*> nodes;
+        std::unordered_map<std::string, SymbolNode*> sym_map;
 
-        CompDAG() 
-        {
+        CompDAG() {
             nodes.reserve(1000);
         }
 
@@ -79,8 +69,21 @@ namespace rain {
             nodes.clear();
         }
 
-        void add_node(CompNode *node) {
+        void add_node(CompNode*node) {
             nodes.push_back(node);
+        }
+
+        void add_node(SymbolNode *node) {
+            sym_map[node->_symbol->name] = node;
+            nodes.push_back(node);
+        }
+
+        SymbolNode *get_sym(std::string name) {
+            auto it = sym_map.find(name);
+            if (it != sym_map.end()) {
+                return it->second;
+            }
+            return nullptr;
         }
     };
 };

@@ -8,20 +8,21 @@ namespace rain {
     class DAGVisualizer {
     public:
         // 输出到指定文件
-        static void export_to_dot(const CompDAG &dag, const std::string &filename) {
+        static void export_to_dot(const CompDAG &dag, const std::string &filename, CodeGenContext &ctx) {
             std::ofstream ofs(filename);
             if (!ofs.is_open()) return;
             ofs << "digraph CompDAG {\n";
             // 输出所有节点
             for (const auto *node : dag.nodes) {
                 ofs << "  \"" << (void*)node << "\" [label=\"" << node_type_to_string(node->type);
-                if (node->type == DAGNodeTypes::LITERAL) {
-                    auto lit = static_cast<const LiteralNode*>(node);
-                    ofs << "\\n" << (lit->_value ? lit->_value->content : "null");
-                } else if (node->type == DAGNodeTypes::VARIABLE) {
-                    auto var = static_cast<const VariableNode*>(node);
-                    ofs << "\\n" << var->name;
-                }
+                if (node->type == DAGNodeTypes::SYMBOL) {
+                    auto sym = static_cast<const SymbolNode*>(node);
+                    if (sym == nullptr && sym->_symbol->info == nullptr) {
+                        ofs << "\\nnull";
+                    } else {
+                        ofs << "\\n" << sym->_symbol->info->repr();
+                    }
+                } 
                 ofs << "\"]\n";
             }
             // 输出所有边
@@ -36,8 +37,7 @@ namespace rain {
     private:
         static const char* node_type_to_string(DAGNodeTypes type) {
             switch (type) {
-            case DAGNodeTypes::LITERAL: return "LITERAL";
-            case DAGNodeTypes::VARIABLE: return "VARIABLE";
+            case DAGNodeTypes::SYMBOL: return "SYMBOL";
             case DAGNodeTypes::ADD: return "+";
             case DAGNodeTypes::SUB: return "-";
             case DAGNodeTypes::MUL: return "*";

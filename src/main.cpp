@@ -32,9 +32,11 @@ int main(int, char**){
     }
 
     rain::CompDAG dag;
+    rain::SymbolTable symtab;
+    rain::CodeGenContext ctx(symtab);
     
-    rain::CompNode *root = rain::general_expr_gen(root_expr, dag);
-    rain::DAGVisualizer::export_to_dot(dag, "dag.dot");
+    rain::CompNode *root = rain::general_expr_gen(root_expr, dag, ctx);
+    rain::DAGVisualizer::export_to_dot(dag, "dag.dot", ctx);
 
     rain::IASTNode::pool.cleanup();
     rain::Token::pool.cleanup();
