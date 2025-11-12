@@ -375,8 +375,41 @@ namespace rain {
         }
     };
 
+    class PrintStmtNode : public IPrintStmtAST,
+    public Connect<
+        DiscardTerminal<TokenType::SIGN_AT>,
+        ExprNode,
+        DiscardTerminal<TokenType::SIGN_SEMICOLON>
+        > {
+    public:
+        using Connect::Connect;
+        template <typename Base>
+        PrintStmtNode(Base *base) : Connect(*base) {
+        }
+
+        static bool lookahead(TokenIter begin, TokenIter end) {
+            return Connect::lookahead(begin, end);
+        }
+
+        static ParseResult<PrintStmtNode> parse(TokenIter begin, TokenIter end) {
+            auto result = Connect::parse(begin, end);
+            if (!result.success) {
+                return ParseResult<PrintStmtNode>::failed(end);
+            }
+            return ParseResult<PrintStmtNode>(result.success,
+                                              new PrintStmtNode(result.val),
+                                              result.end);
+        }
+
+        virtual IExprAST *expr() const override {
+            return std::get<1>(this->children());
+        }
+    };
+
     class ProgramNode : public IProgramAST,
-    public Closure<LetStmtNode> {
+    public Closure<Choice<
+        LetStmtNode,
+        PrintStmtNode>> {
     public:
         using Closure::Closure;
 
@@ -398,10 +431,12 @@ namespace rain {
                                               result.end);
         }
 
-        virtual std::vector<const ILetStmtAST *> let_statements() const override {
-            std::vector<const ILetStmtAST *> stmts;
+        virtual std::vector<const IStmtAST*> statements() const override {
+            std::vector<const IStmtAST *> stmts;
             for (auto *stmt_node : this->children()) {
-                stmts.push_back(stmt_node);
+                stmts.push_back(std::visit([](auto&& arg) -> const IStmtAST* {
+                    return (const IStmtAST *)(arg);
+                }, stmt_node->child()));
             }
             return stmts;
         }

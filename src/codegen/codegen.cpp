@@ -216,10 +216,42 @@ namespace rain {
         return true;
     }
 
+    bool gen_print_stmt(const IPrintStmtAST *print_node, CodeGenContext &ctx)
+    {
+        IExprAST *expr = print_node->expr();
+        Type *expr_type = gen_expr_type(expr, ctx);
+        if (expr_type == nullptr) {
+            std::cout << "Failed to generate type for print expression." << std::endl;
+            return false;
+        }
+
+        if (expr_type->kind != TypeKinds::TYPE_NAT) {
+            std::cout << "Print expression must be of type Nat, but got: " << expr_type->repr() << std::endl;
+            delete expr_type;
+            return false;
+        }
+
+        std::cout << "Generated type for print expression: " << expr_type->repr() << std::endl;
+        delete expr_type;
+
+        return true;
+    }
+
+    bool gen_stmt(const IStmtAST *stmt_node, CodeGenContext &ctx)
+    {
+        if (const IPrintStmtAST *print_stmt = dynamic_cast<const IPrintStmtAST *>(stmt_node)) {
+            return gen_print_stmt(print_stmt, ctx);
+        }
+        else if (const ILetStmtAST *let_stmt = dynamic_cast<const ILetStmtAST *>(stmt_node)) {
+            return gen_let_stmt(let_stmt, ctx);
+        }
+        return false;
+    }
+
     bool gen_program(const IProgramAST *program_node, CodeGenContext &ctx)
     {
-        for (const ILetStmtAST *let_stmt : program_node->let_statements()) {
-            if (!gen_let_stmt(let_stmt, ctx)) {
+        for (const IStmtAST *stmt : program_node->statements()) {
+            if (! gen_stmt(stmt, ctx)) {
                 return false;
             }
         }

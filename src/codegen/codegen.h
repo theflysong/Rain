@@ -21,5 +21,7 @@ namespace rain {
     Type *gen_application_expr_type(const IApplicationAST *app_node, CodeGenContext &ctx);
     Type *gen_expr_type(const IExprAST *expr_node, CodeGenContext &ctx);
     bool gen_let_stmt(const ILetStmtAST *let_node, CodeGenContext &ctx);
+    bool gen_print_stmt(const IPrintStmtAST *print_node, CodeGenContext &ctx);
+    bool gen_stmt(const IStmtAST *stmt_node, CodeGenContext &ctx);
     bool gen_program(const IProgramAST *program_node, CodeGenContext &ctx);
 }

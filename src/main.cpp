@@ -5,9 +5,10 @@
 #include "file/helper.h"
 #include "parser/syntax_dot.h"
 #include "codegen/codegen.h"
+#include "ir/vm.h"
 
-int main(int, char**){
-    rain::Lexer lexer(rain::readall("./text.txt"));
+void testbench_1() {
+        rain::Lexer lexer(rain::readall("./text.txt"));
 
     lexer.lex_all();
     lexer.token_sequence.push_back(new rain::Token(rain::TokenType::ENDMARK, "$", rain::makepos(lexer.pos)));
@@ -37,6 +38,32 @@ int main(int, char**){
     } else {
         std::cout << "Program generation failed!" << std::endl;
     }
+}
+
+void testbench_2() {
+
+    std::vector<rain::Process *> procs;
+    rain::Process *proc1 = new rain::Process({
+        {rain::Instruction::OpCode::LOAD_PARAM, 0},
+        {rain::Instruction::OpCode::INC},
+        {rain::Instruction::OpCode::INC},
+        {rain::Instruction::OpCode::RETURN, 0}
+    }, 0);
+    rain::Process *main_proc = new rain::Process({
+        {rain::Instruction::OpCode::LOAD_CONST, 63},
+        {rain::Instruction::OpCode::STORE_PARAM, 0},
+        {rain::Instruction::OpCode::CALL, 1},
+        {rain::Instruction::OpCode::PRINT, 0},
+        {rain::Instruction::OpCode::HALT, 0}
+    }, 0);
+    rain::Program vm_procs({main_proc, proc1}, main_proc);
+    rain::ExecEnv env(vm_procs);
+    env.run();
+}
+
+int main(int, char**){
+    // testbench_1();
+    testbench_1();
 
     rain::IASTNode::pool.cleanup();
     rain::Token::pool.cleanup();

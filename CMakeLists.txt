@@ -15,6 +15,8 @@ src/parser/syntax.cpp
 src/codegen/codegen.cpp
 src/codegen/type.cpp
 
+src/ir/vm.cpp
+
 src/file/posinfo.cpp
 src/file/helper.cpp
 

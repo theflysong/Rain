@@ -152,9 +152,16 @@ namespace rain {
         virtual const IExprAST *inner_expr() const = 0;
     };
 
-    class ILetStmtAST : public IASTNode {
+    class IStmtAST : public IASTNode {
     public:
-        ILetStmtAST() : IASTNode() {
+        IStmtAST() : IASTNode() {
+        }
+        virtual ~IStmtAST() = default;
+    };
+
+    class ILetStmtAST : public IStmtAST {
+    public:
+        ILetStmtAST() : IStmtAST() {
         }
         virtual ~ILetStmtAST() = default;
         virtual std::string identifier() const = 0;
@@ -162,11 +169,19 @@ namespace rain {
         virtual IExprAST *value_expr() const = 0;
     };
 
+    class IPrintStmtAST : public IStmtAST {
+    public:
+        IPrintStmtAST() : IStmtAST() {
+        }
+        virtual ~IPrintStmtAST() = default;
+        virtual IExprAST *expr() const = 0;
+    };
+
     class IProgramAST : public IASTNode {
     public:
         IProgramAST() : IASTNode() {
         }
         virtual ~IProgramAST() = default;
-        virtual std::vector<const ILetStmtAST *> let_statements() const = 0;
+        virtual std::vector<const IStmtAST *> statements() const = 0;
     };
 }
