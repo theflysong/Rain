@@ -32,6 +32,8 @@ namespace rain {
                     return "<unknown type>";
             }
         }
+
+        static Type NAT_TYPE;
     };
 
     bool type_match(Type *a, Type *b);

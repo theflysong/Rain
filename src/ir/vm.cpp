@@ -14,6 +14,11 @@ void rainvm::ExecEnv::exec_instruction(const Instruction &instr)
     case Instruction::OpCode::LOAD_VAR:
         push_val(get_var(instr.operand));
         break;
+    case Instruction::OpCode::ADDC: {
+        int rhs = pop_val().as_int();
+        push_val(Value(rhs + instr.operand));
+        break;
+    }
     case Instruction::OpCode::INC: {
         int val = pop_val().as_int();
         push_val(Value(val + 1));
@@ -54,7 +59,7 @@ void rainvm::ExecEnv::exec_instruction(const Instruction &instr)
         Frame &caller = framestack.top();
         // 将实参从 caller.caller_param_table 传递给被调帧的 callee_param_table
         auto callee_params = caller.caller_param_table; // 拷贝
-        framestack.push(Frame{proc, std::stack<Value>(), {}, {}, callee_params, -1});
+        framestack.push(Frame{proc, std::stack<Value>(), {}, {}, callee_params, nullptr, 0});
         // 可选：清空调用者的参数表，避免泄漏到后续调用
         caller.caller_param_table.clear();
         break;
@@ -72,14 +77,8 @@ void rainvm::ExecEnv::exec_instruction(const Instruction &instr)
         halt = true;
         break;
     case Instruction::OpCode::LOAD_CAPTURED_VAR: {
-        // 从栈顶获取闭包，不弹出
-        const Value &top = peek_val();
-        if (!top.is_closure()) {
-            std::cout << "LOAD_CAPTURED_VAR expects closure on stack top" << std::endl;
-            push_val(Value(0));
-            break;
-        }
-        auto clos = top.as_closure();
+        // 从当前帧的闭包（self）读取捕获值，不依赖栈顶保持为闭包
+        auto clos = frame().self;
         int idx = instr.operand;
         if (!clos || idx < 0 || idx >= static_cast<int>(clos->captured.size())) {
             std::cout << "Captured index out of range: " << idx << std::endl;
@@ -141,7 +140,7 @@ void rainvm::ExecEnv::exec_instruction(const Instruction &instr)
         Frame &caller = framestack.top();
         auto callee_params = caller.caller_param_table; // 将调用者准备好的参数作为被调者的 callee 参数
         // 新帧并将闭包本身压入其栈，方便 LOAD_CAPTURED_VAR 使用
-        Frame new_frame{clos->proc, std::stack<Value>(), {}, {}, callee_params, -1};
+        Frame new_frame{clos->proc, std::stack<Value>(), {}, {}, callee_params, clos, 0};
         new_frame.valstack.push(Value(clos));
         framestack.push(std::move(new_frame));
         caller.caller_param_table.clear();
@@ -154,11 +153,12 @@ void rainvm::ExecEnv::exec_instruction(const Instruction &instr)
 
 void rainvm::ExecEnv::run()
 {
-    while (framestack.top().pc < framestack.top().proc->get_instructions().size()) {
-        exec_instruction(framestack.top().proc->get_instructions()[framestack.top().pc]);
-        framestack.top().pc++;
-        if (halt) {
-            break;
-        }
+    while (!halt && !framestack.empty()) {
+        Frame &cur = framestack.top();
+        const auto &insns = cur.proc->get_instructions();
+        if (cur.pc >= static_cast<int>(insns.size())) break;
+        // 预先递增当前帧的 pc，避免在 exec 期间帧栈变化导致递增到错误的帧
+        const Instruction instr = insns[cur.pc++];
+        exec_instruction(instr);
     }
 }

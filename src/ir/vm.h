@@ -13,6 +13,7 @@ namespace rainvm {
             STORE_VAR,  // 存储第i个变量(可能为闭包)
             LOAD_VAR,
             INC,
+            ADDC,
             RETURN,
             STORE_PARAM,
             LOAD_PARAM,
@@ -72,6 +73,10 @@ namespace rainvm {
             }
             return processes[n];
         }
+
+        int process_count() const {
+            return static_cast<int>(processes.size());
+        }
     };
 
     struct Closure; // 前向声明，Value 中以指针形式引用
@@ -108,6 +113,8 @@ namespace rainvm {
             std::unordered_map<int, Value> variables;
             std::unordered_map<int, Value> caller_param_table;
             std::unordered_map<int, Value> callee_param_table;
+            // 持有当前过程对应的闭包（用于捕获变量访问）
+            std::shared_ptr<Closure> self;
             int pc;
         };
         const Program &pro;
@@ -115,7 +122,7 @@ namespace rainvm {
         bool halt;
     public:
         ExecEnv(const Program &program) : pro(program), framestack(), halt(false) {
-            framestack.push(Frame{pro.get_main_process(), std::stack<Value>(), {}, {}, {}, 0});
+            framestack.push(Frame{pro.get_main_process(), std::stack<Value>(), {}, {}, {}, nullptr, 0});
         }
 
         const Frame& frame() const{
@@ -160,4 +167,26 @@ namespace rainvm {
         void exec_instruction(const Instruction &instr);
         void run();
     };
+
+    static const char* op_to_cstr(rainvm::Instruction::OpCode o) {
+        using OP = rainvm::Instruction::OpCode;
+        switch (o) {
+            case OP::NOP: return "NOP";
+            case OP::LOAD_CONST: return "LOAD_CONST";
+            case OP::STORE_VAR: return "STORE_VAR";
+            case OP::LOAD_VAR: return "LOAD_VAR";
+            case OP::INC: return "INC";
+            case OP::RETURN: return "RETURN";
+            case OP::STORE_PARAM: return "STORE_PARAM";
+            case OP::LOAD_PARAM: return "LOAD_PARAM";
+            case OP::CALL: return "CALL";
+            case OP::PRINT: return "PRINT";
+            case OP::HALT: return "HALT";
+            case OP::LOAD_CAPTURED_VAR: return "LOAD_CAPTURED_VAR";
+            case OP::STORE_CAPTURED_VAR: return "STORE_CAPTURED_VAR";
+            case OP::MAKE_CLOSURE: return "MAKE_CLOSURE";
+            case OP::APPLY: return "APPLY";
+            default: return "?";
+        }
+    }
 }

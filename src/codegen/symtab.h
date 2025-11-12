@@ -11,96 +11,43 @@ namespace rain {
         LITERAL_INTEGER,
         SYMBOL_IDENTIFIER
     };
-
-    class ISymbolInfo {
-    public:
-        SymbolTypes type;
-        ISymbolInfo(SymbolTypes type) : type(type) {}
-        virtual ~ISymbolInfo() = default;
-        virtual std::string repr() const = 0;
-    };
-
-    class LiteralInfo : public ISymbolInfo {
-    public:
-        long long int_value;
-        LiteralInfo(SymbolTypes type, long long val) : ISymbolInfo(type), int_value(val) {}
-        virtual ~LiteralInfo() {
-        }
-        virtual std::string repr() const override {
-           switch (type) {
-               case SymbolTypes::LITERAL_INTEGER:
-                   return std::string("INTEGER: ") +std::to_string(int_value);
-               default:
-                   return "<unknown literal>";
-           }
-        }
-    };
-
-    class VariableInfo : public ISymbolInfo {
-    public:
-        std::string identifier;
-        LiteralInfo *info;
-        Type *var_type;
-        
-        VariableInfo(std::string identifier, Type *var_type)
-            : ISymbolInfo(SymbolTypes::SYMBOL_IDENTIFIER), identifier(std::move(identifier)), info(nullptr), var_type(var_type)
-        {
-        }
-        
-        virtual ~VariableInfo() {
-        }
-
-        virtual std::string repr() const override {
-            if (info != nullptr) {
-                return std::string("VARIABLE(LITERAL): ") + info->repr();
-            }
-            if (var_type != nullptr) {
-                return "VARIABLE(" + var_type->repr() + "): " + identifier;
-            }
-            return "VARIABLE: " + identifier;
-        }
-    };
     
     struct SymbolEntry {
         std::string name;
         SymbolTypes type;
-        ISymbolInfo *info;
         int level;
+        // Move variable information here for SYMBOL_IDENTIFIER
+        long long int_value;
+        Type *var_type;
 
-        SymbolEntry(std::string name, SymbolTypes type, ISymbolInfo *info, int level) 
-            : name(std::move(name)), type(type), info(info), level(level)
-        {
-        }
+        SymbolEntry(std::string name, SymbolTypes type, int level, Type *var_type = nullptr, long long int_value = 0)
+            : name(std::move(name)), type(type), level(level), var_type(var_type), int_value(int_value)
+        {}
 
         ~SymbolEntry() {
-            if (info != nullptr) {
-                delete info;
-            }
+            // var_type is owned by the compiler/type system; do not delete here
         }
     };
     
     static inline SymbolEntry *create_literal_symbol(const Token *literal, int level) {
         SymbolTypes type;
-        ISymbolInfo *info = nullptr;
+        long long val;
 
         switch (literal->type) {
             case TokenType::DEC_INTEGER: {
                 long long val = std::stoll(literal->lexeme, nullptr, 0);
                 type = SymbolTypes::LITERAL_INTEGER;
-                info = new LiteralInfo(type, val);
-                break;
             }
             default:
                 type = SymbolTypes::NONE;
-                info = nullptr;
-                break;
+                val = 0;
         }
 
-        return new SymbolEntry(literal->lexeme, type, info, level);
+        return new SymbolEntry(literal->lexeme, type, level, &Type::NAT_TYPE, val);
     }
 
     static inline SymbolEntry *create_variable_symbol(const std::string &name, Type *var_type, int level) {
-        return new SymbolEntry(name, SymbolTypes::SYMBOL_IDENTIFIER, new VariableInfo(name, var_type), level);
+        return new SymbolEntry(name, SymbolTypes::SYMBOL_IDENTIFIER, level, var_type, 0);
     }
 
     struct SymbolTable {

@@ -1,6 +1,8 @@
 #include "codegen/type.h"
 
 namespace rain {
+    Type Type::NAT_TYPE(TypeKinds::TYPE_NAT);
+
     bool type_match(Type *a, Type *b) {
         if (a->kind != b->kind) {
             return false;
