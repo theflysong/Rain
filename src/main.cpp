@@ -8,7 +8,7 @@
 #include "ir/vm.h"
 
 void testbench_1() {
-        rain::Lexer lexer(rain::readall("./text.txt"));
+    rain::Lexer lexer(rain::readall("./text.txt"));
 
     lexer.lex_all();
     lexer.token_sequence.push_back(new rain::Token(rain::TokenType::ENDMARK, "$", rain::makepos(lexer.pos)));
@@ -41,29 +41,68 @@ void testbench_1() {
 }
 
 void testbench_2() {
+    using namespace rainvm;
 
-    std::vector<rain::Process *> procs;
-    rain::Process *proc1 = new rain::Process({
-        {rain::Instruction::OpCode::LOAD_PARAM, 0},
-        {rain::Instruction::OpCode::INC},
-        {rain::Instruction::OpCode::INC},
-        {rain::Instruction::OpCode::RETURN, 0}
+    std::vector<Process *> procs;
+    Process *proc1 = new Process({
+        {Instruction::OpCode::LOAD_PARAM, 0},
+        {Instruction::OpCode::INC},
+        {Instruction::OpCode::INC},
+        {Instruction::OpCode::RETURN, 0}
     }, 0);
-    rain::Process *main_proc = new rain::Process({
-        {rain::Instruction::OpCode::LOAD_CONST, 63},
-        {rain::Instruction::OpCode::STORE_PARAM, 0},
-        {rain::Instruction::OpCode::CALL, 1},
-        {rain::Instruction::OpCode::PRINT, 0},
-        {rain::Instruction::OpCode::HALT, 0}
+    Process *main_proc = new Process({
+        {Instruction::OpCode::LOAD_CONST, 63},
+        {Instruction::OpCode::STORE_PARAM, 0},
+        {Instruction::OpCode::CALL, 1},
+        {Instruction::OpCode::PRINT, 0},
+        {Instruction::OpCode::HALT, 0}
     }, 0);
-    rain::Program vm_procs({main_proc, proc1}, main_proc);
-    rain::ExecEnv env(vm_procs);
+    Program vm_procs({main_proc, proc1}, main_proc);
+    ExecEnv env(vm_procs);
+    env.run();
+}
+
+// 使用闭包功能的简单测试：
+// 1) 在 main 中构造一个捕获值为 10 的闭包，随后将其捕获改为 20
+// 2) 调用该闭包，闭包体仅返回其捕获值
+// 期望输出：PRINT: 20
+void testbench_closure() {
+    using namespace rainvm;
+
+    // 闭包体：读取捕获值 #0 并返回
+    Process *closure_body = new Process({
+        {Instruction::OpCode::LOAD_CAPTURED_VAR, 0},
+        {Instruction::OpCode::INC},
+        {Instruction::OpCode::RETURN, 0},
+    }, /*param_cnt*/ 0);
+
+    // 主过程：
+    // 栈: [10] [1] -> MAKE_CLOSURE( index_of(closure_body) ) -> [closure]
+    // 然后将 20 写入闭包捕获 #0: push 20; STORE_CAPTURED_VAR 0
+    // 应用闭包 -> 返回捕获值
+    // 打印并停止
+    Process *main_proc = new Process({
+        {Instruction::OpCode::LOAD_CONST, 10},     // 捕获值0
+        {Instruction::OpCode::LOAD_CONST, 1},      // 捕获数量
+        {Instruction::OpCode::MAKE_CLOSURE, 1},    // processes[1] = closure_body
+
+        {Instruction::OpCode::LOAD_CONST, 20},     // 新值
+        {Instruction::OpCode::STORE_CAPTURED_VAR, 0},
+
+        {Instruction::OpCode::APPLY, 0},           // 应用栈顶闭包
+        {Instruction::OpCode::PRINT, 0},
+        {Instruction::OpCode::HALT, 0},
+    }, /*param_cnt*/ 0);
+
+    Program program({main_proc, closure_body}, main_proc);
+    ExecEnv env(program);
     env.run();
 }
 
 int main(int, char**){
     // testbench_1();
-    testbench_1();
+    // testbench_2();
+    testbench_closure();
 
     rain::IASTNode::pool.cleanup();
     rain::Token::pool.cleanup();
