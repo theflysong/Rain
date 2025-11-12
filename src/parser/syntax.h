@@ -1,19 +1,17 @@
 #include "parser/ast.h"
 
 namespace rain {
-    // 前向声明
-    class ExprNode;
 
     template <typename T>
-    constexpr const IExpr *IExpr_cast(const T *node) {
-        return (const IExpr *)(node);
+    constexpr const IExprAST *IExpr_cast(const T *node) {
+        return (const IExprAST *)(node);
     }
 
     // 前向声明
     class TypeNode;
     class ExprNode;
 
-    class LiteralNode :
+    class LiteralNode : public ILiteralExprAST,
     public Terminal<TokenType::DEC_INTEGER>
     {
     public:
@@ -27,6 +25,10 @@ namespace rain {
             return Terminal::lookahead(begin, end);
         }
 
+        virtual const Token *get_literal_token() const override {
+            return this->token();
+        }
+
         static ParseResult<LiteralNode> parse(TokenIter begin, TokenIter end) {
             auto result = Terminal::parse(begin, end);
             if (!result.success) {
@@ -38,7 +40,7 @@ namespace rain {
         }
     };
 
-    class IdentifierNode :
+    class IdentifierNode : public IIdentifierExprAST,
     public Terminal<TokenType::IDENTIFIER>
     {
     public:
@@ -61,32 +63,60 @@ namespace rain {
                                                 new IdentifierNode(result.val), 
                                                 result.end);
         }
+
+        virtual std::string get_identifier() const override {
+            return this->token()->lexeme;
+        }
     };
 
-    class TypeNode :
+    using ArrowToTypeBody = Connect<
+        DiscardTerminal<TokenType::SIGN_POINTER>,
+        TypeNode
+        >;
+    class TypeNode : public ITypeAST,
     public Choice<
         Connect<
             Terminal<TokenType::SIGN_MUL>,
-            Closure<Connect<
-                Terminal<TokenType::SIGN_POINTER>,
-                TypeNode
-            >>
+            Closure<ArrowToTypeBody>
         >,
         Connect<
-            Terminal<TokenType::SIGN_LPAREN>,
+            DiscardTerminal<TokenType::SIGN_LPAREN>,
             TypeNode,
-            Terminal<TokenType::SIGN_RPAREN>,
-            Closure<Connect<
-                Terminal<TokenType::SIGN_POINTER>,
-                TypeNode
-            >>
+            DiscardTerminal<TokenType::SIGN_RPAREN>,
+            Closure<ArrowToTypeBody>
         >
     > {
     public:
         using Choice::Choice;
 
         template <typename Base>
-        TypeNode(Base *base) : Choice(*base) {
+        TypeNode(Base *base) : ITypeAST(), Choice(*base) {
+        }
+
+        virtual std::vector<TypeTerm> flatten() const override {
+            std::vector<TypeTerm> terms;
+            std::vector<ArrowToTypeBody *> arrows;
+            if (this->index() == 0) {
+                // 第一种形式：* 后跟多个箭头
+                auto production = std::get<0>(this->child());
+
+                // 第一个是 *
+                terms.push_back(TypeTerm{nullptr, true});
+                arrows = std::get<1>(production->children())->children();
+            } else if (this->index() == 1) {
+                // 第二种形式：(type) 后跟多个箭头
+                auto production = std::get<1>(this->child());
+                // 第二个是 type
+                auto inner_type = std::get<1>(production->children());
+
+                terms.push_back(TypeTerm{inner_type, false});
+                arrows = std::get<3>(production->children())->children();
+            }
+            for (auto *arrow : arrows) {
+                auto arrow_type = std::get<1>(arrow->children());
+                terms.push_back(TypeTerm{arrow_type, false});
+            }
+            return terms;
         }
         
         static bool lookahead(TokenIter begin, TokenIter end) {
@@ -104,7 +134,7 @@ namespace rain {
         }
     };
 
-    class AbstractionNode :
+    class AbstractionNode : public IAbstractionAST,
     public Connect<
         DiscardTerminal<TokenType::SIGN_DOLLAR>, 
         DiscardTerminal<TokenType::SIGN_LPAREN>, 
@@ -135,8 +165,20 @@ namespace rain {
                                                 new AbstractionNode(result.val), 
                                                 result.end);
         }
+
+        virtual std::string parameter_name() const override {
+            auto id_node = std::get<2>(this->children());
+            return id_node->token()->lexeme;
+        }
+
+        virtual ITypeAST *parameter_type() const override {
+            return std::get<4>(this->children());
+        }
+
+        // 实现需要ExprNode的完整定义, 因此拖延到syntax.cpp中实现
+        virtual const IExprAST *body_expr() const override;
     };
-    class ApplicationNode :
+    class ApplicationNode : public IApplicationAST,
     public Connect<
         DiscardTerminal<TokenType::SIGN_SHARP>,
         IdentifierNode,
@@ -166,50 +208,24 @@ namespace rain {
                                                 new ApplicationNode(result.val), 
                                                 result.end);
         }
+
+        virtual const IExprAST *function_expr() const override {
+            return std::get<1>(this->children());
+        }
+
+        virtual std::vector<const IExprAST *> argument_expr() const override;
     };
 
-    class InduceExprNode :
-    public Connect<
-        DiscardTerminal<TokenType::SIGN_AT>,
-        IdentifierNode,
-        DiscardTerminal<TokenType::SIGN_LBRACKET>,
-        ExprNode,
-        DiscardTerminal<TokenType::SIGN_COMMA>,
-        AbstractionNode,
-        DiscardTerminal<TokenType::SIGN_RBRACKET>
-    > {
-    public:
-        using Connect::Connect;
-
-        template <typename Base>
-        InduceExprNode(Base *base) : Connect(*base) {
-        }
-
-        static bool lookahead(TokenIter begin, TokenIter end) {
-            return Connect::lookahead(begin, end);
-        }
-
-        static ParseResult<InduceExprNode> parse(TokenIter begin, TokenIter end) {
-            auto result = Connect::parse(begin, end);
-            if (!result.success) {
-                return ParseResult<InduceExprNode>::failed(end);
-            }
-            return ParseResult<InduceExprNode>(result.success,
-                                              new InduceExprNode(result.val),
-                                              result.end);
-        }
-    };
-
-    class PrimExprNode :
-    public Choice<
-        IdentifierNode,
-        LiteralNode,
-        Connect<
+    using PrimParenBody = Connect<
             DiscardTerminal<TokenType::SIGN_LPAREN>,
             ExprNode,
             DiscardTerminal<TokenType::SIGN_RPAREN>
-        >,
-        InduceExprNode,
+        >;
+    class PrimExprNode : public IPrimExprAST,
+    public Choice<
+        IdentifierNode,
+        LiteralNode,
+        PrimParenBody,
         ApplicationNode
     > {
     public:
@@ -232,9 +248,20 @@ namespace rain {
                                               new PrimExprNode(result.val),
                                               result.end);
         }
+
+        virtual const IExprAST *inner_expr() const override {
+            if (this->index() == 2) {
+                // 括号表达式，返回括号内的表达式
+                auto paren_body = std::get<2>(this->child());
+                return IExpr_cast(std::get<1>(paren_body->children()));
+            }
+            return std::visit([](auto&& arg) -> const IExprAST* {
+                return IExpr_cast(arg);
+            }, this->child());
+        }
     };
 
-    class SuccExprNode :
+    class SuccExprNode : public ISuccExprAST,
     public Connect<
         Closure<Terminal<TokenType::SIGN_INC>>,
         PrimExprNode
@@ -259,9 +286,18 @@ namespace rain {
                                               new SuccExprNode(result.val),
                                               result.end);
         }
+
+        virtual const int num_succ() const override {
+            auto incs = std::get<0>(this->children())->children();
+            return static_cast<int>(incs.size());
+        }
+
+        virtual const IExprAST *sub_expr() const override {
+            return IExpr_cast(std::get<1>(this->children()));
+        }
     };
 
-    class ExprNode :
+    class ExprNode : public IGeneralExprAST,
     public Choice<
         AbstractionNode,
         SuccExprNode
@@ -286,9 +322,15 @@ namespace rain {
                                               new ExprNode(result.val),
                                               result.end);
         }
+
+        virtual const IExprAST *inner_expr() const override {
+            return std::visit([](auto&& arg) -> const IExprAST* {
+                return IExpr_cast(arg);
+            }, this->child());
+        }
     };
 
-    class LetStmtNode :
+    class LetStmtNode : public ILetStmtAST,
     public Connect<
         DiscardTerminal<TokenType::KEYWORD_LET>,
         IdentifierNode,
@@ -318,9 +360,22 @@ namespace rain {
                                               new LetStmtNode(result.val),
                                               result.end);
         }
+
+        virtual std::string identifier() const override {
+            auto id_node = std::get<1>(this->children());
+            return id_node->token()->lexeme;
+        }
+
+        virtual ITypeAST *type_decl() const override {
+            return std::get<3>(this->children());
+        }
+
+        virtual IExprAST *value_expr() const override  {
+            return std::get<5>(this->children());
+        }
     };
 
-    class ProgramNode :
+    class ProgramNode : public IProgramAST,
     public Closure<LetStmtNode> {
     public:
         using Closure::Closure;
@@ -341,6 +396,14 @@ namespace rain {
             return ParseResult<ProgramNode>(result.success,
                                               new ProgramNode(result.val),
                                               result.end);
+        }
+
+        virtual std::vector<const ILetStmtAST *> let_statements() const override {
+            std::vector<const ILetStmtAST *> stmts;
+            for (auto *stmt_node : this->children()) {
+                stmts.push_back(stmt_node);
+            }
+            return stmts;
         }
     };
 }

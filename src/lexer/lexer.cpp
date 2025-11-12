@@ -761,7 +761,8 @@ void Lexer::produce(int required)
 }
 
 static std::map<std::string, TokenType> __keyword_map__ = {
-   {"let",      TokenType::KEYWORD_LET}
+   {"let",      TokenType::KEYWORD_LET},
+   {"decl",     TokenType::KEYWORD_DECL},
 };
 
 void rain::initialize_lexer_phase() {

@@ -103,6 +103,7 @@ namespace rain {
         KEYWORD_FALSE    = MASK_KEYWORD | 0x001F,         // false
         KEYWORD_NULL     = MASK_KEYWORD | 0x0020,         // null
         KEYWORD_LAMBDA   = MASK_KEYWORD | 0x0021,         // lambda
+        KEYWORD_DECL     = MASK_KEYWORD | 0x0022,         // delc
         ENDMARK          = 0x2000
     };
     

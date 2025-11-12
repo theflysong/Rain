@@ -4,6 +4,7 @@
 #include "parser/syntax.h"
 #include "file/helper.h"
 #include "parser/syntax_dot.h"
+#include "codegen/codegen.h"
 
 int main(int, char**){
     rain::Lexer lexer(rain::readall("./text.txt"));
@@ -25,6 +26,16 @@ int main(int, char**){
         rain::generate_ast_dot_to_file("ast.dot", program_node);
     } else {
         std::cout << "Parse failed!" << std::endl;
+    }
+
+    rain::SymbolTable symtab;
+    rain::CodeGenContext ctx(symtab);
+
+    bool result = rain::gen_program(program_node, ctx);
+    if (result) {
+        std::cout << "Generated program successfully!" << std::endl;
+    } else {
+        std::cout << "Program generation failed!" << std::endl;
     }
 
     rain::IASTNode::pool.cleanup();

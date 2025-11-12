@@ -151,7 +151,7 @@ private:
     template<typename T>
     int visit_terminal(T* node) {
         const Token *tok = node->token();
-        std::string lbl = std::string("Terminal") + "\n" + (tok ? tok->content : "<null>");
+        std::string lbl = std::string("Terminal") + "\n" + (tok ? tok->lexeme : "<null>");
         int id = emit_node(lbl);
         return id;
     }

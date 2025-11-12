@@ -3,9 +3,11 @@
 #include <string>
 #include <unordered_map>
 #include "lexer/lexer.h"
+#include "codegen/type.h"
 
 namespace rain {
     enum class SymbolTypes {
+        NONE,
         LITERAL_INTEGER,
         SYMBOL_IDENTIFIER
     };
@@ -19,8 +21,8 @@ namespace rain {
     };
 
     class LiteralInfo : public ISymbolInfo {
-        const long long int_value;
     public:
+        long long int_value;
         LiteralInfo(SymbolTypes type, long long val) : ISymbolInfo(type), int_value(val) {}
         virtual ~LiteralInfo() {
         }
@@ -38,18 +40,22 @@ namespace rain {
     public:
         std::string identifier;
         LiteralInfo *info;
-        VariableInfo(std::string identifier) 
-            : ISymbolInfo(SymbolTypes::SYMBOL_IDENTIFIER), identifier(std::move(identifier)), info(nullptr)
+        Type *var_type;
+        
+        VariableInfo(std::string identifier, Type *var_type)
+            : ISymbolInfo(SymbolTypes::SYMBOL_IDENTIFIER), identifier(std::move(identifier)), info(nullptr), var_type(var_type)
         {
         }
+        
         virtual ~VariableInfo() {
-            if (info != nullptr) {
-                delete info;
-            }
         }
+
         virtual std::string repr() const override {
             if (info != nullptr) {
                 return std::string("VARIABLE(LITERAL): ") + info->repr();
+            }
+            if (var_type != nullptr) {
+                return "VARIABLE(" + var_type->repr() + "): " + identifier;
             }
             return "VARIABLE: " + identifier;
         }
@@ -59,6 +65,12 @@ namespace rain {
         std::string name;
         SymbolTypes type;
         ISymbolInfo *info;
+        int level;
+
+        SymbolEntry(std::string name, SymbolTypes type, ISymbolInfo *info, int level) 
+            : name(std::move(name)), type(type), info(info), level(level)
+        {
+        }
 
         ~SymbolEntry() {
             if (info != nullptr) {
@@ -66,45 +78,38 @@ namespace rain {
             }
         }
     };
-
     
-    static inline SymbolEntry *create_literal_symbol(const Token *literal) {
-        SymbolEntry *entry = new SymbolEntry();
-        entry->name = literal->content;
+    static inline SymbolEntry *create_literal_symbol(const Token *literal, int level) {
+        SymbolTypes type;
+        ISymbolInfo *info = nullptr;
 
         switch (literal->type) {
             case TokenType::DEC_INTEGER: {
-                long long val = std::stoll(literal->content, nullptr, 0);
-                entry->type = SymbolTypes::LITERAL_INTEGER;
-                entry->info = new LiteralInfo(entry->type, val);
+                long long val = std::stoll(literal->lexeme, nullptr, 0);
+                type = SymbolTypes::LITERAL_INTEGER;
+                info = new LiteralInfo(type, val);
                 break;
             }
             default:
-                entry->info = nullptr;
+                type = SymbolTypes::NONE;
+                info = nullptr;
                 break;
         }
 
-        return entry;
-    }
-    
-    static inline SymbolEntry *create_literal_symbol(const std::string &name, SymbolTypes type, LiteralInfo *literal) {
-        SymbolEntry *entry = new SymbolEntry();
-        entry->name = name;
-        entry->type = type;
-        entry->info = literal;
-        return entry;
+        return new SymbolEntry(literal->lexeme, type, info, level);
     }
 
-    static inline SymbolEntry *create_variable_symbol(const std::string &name) {
-        SymbolEntry *entry = new SymbolEntry();
-        entry->name = name;
-        entry->type = SymbolTypes::SYMBOL_IDENTIFIER;
-        entry->info = new VariableInfo(name);
-        return entry;
+    static inline SymbolEntry *create_variable_symbol(const std::string &name, Type *var_type, int level) {
+        return new SymbolEntry(name, SymbolTypes::SYMBOL_IDENTIFIER, new VariableInfo(name, var_type), level);
     }
 
     struct SymbolTable {
         std::unordered_map<std::string, SymbolEntry*> table;
+        std::unordered_map<int, std::vector<std::string>> level_table;
+        int current_level;
+
+        SymbolTable() : table(), level_table(), current_level(0) {
+        }
 
         ~SymbolTable() {
             for (auto &pair : table) {
@@ -129,24 +134,44 @@ namespace rain {
             table[entry->name] = entry;
         }
 
-        void insert(SymbolEntry *entry) {
+        void insert(SymbolEntry *entry, int level) {
             table[entry->name] = entry;
+            level_table[level].push_back(entry->name);
+        }
+
+        void enter_level() {
+            current_level++;
+        }
+
+        void exit_level() {
+            auto it = level_table.find(current_level);
+            if (it != level_table.end()) {
+                for (const std::string &name : it->second) {
+                    auto entry_it = table.find(name);
+                    if (entry_it != table.end()) {
+                        delete entry_it->second;
+                        table.erase(entry_it);
+                    }
+                }
+                level_table.erase(it);
+            }
+            current_level--;
         }
 
         SymbolEntry *lookup_or_insert_literal(const Token *literal) {
-            SymbolEntry *entry = lookup(literal->content);
+            SymbolEntry *entry = lookup(literal->lexeme);
             if (entry == nullptr) {
-                entry = create_literal_symbol(literal);
-                insert(entry);
+                entry = create_literal_symbol(literal, current_level);
+                insert(entry, 0);
             }
             return entry;
         }
 
-        SymbolEntry *lookup_or_insert_variable(std::string identifier) {
+        SymbolEntry *lookup_or_insert_variable(std::string identifier, Type *var_type) {
             SymbolEntry *entry = lookup(identifier);
             if (entry == nullptr) {
-                entry = create_variable_symbol(identifier);
-                insert(entry);
+                entry = create_variable_symbol(identifier, var_type, current_level);
+                insert(entry, current_level);
             }
             return entry;
         }

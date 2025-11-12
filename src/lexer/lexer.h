@@ -9,19 +9,19 @@ namespace rain {
         static mem::Pool<Token> pool;
 
         TokenType type;
-        std::string content;
+        std::string lexeme;
         PosInfo *pos;
 
-        Token(TokenType type, std::string content, PosInfo *pos = nullptr)
-            : type(type), content(content), pos(pos)
+        Token(TokenType type, std::string lexeme, PosInfo *pos = nullptr)
+            : type(type), lexeme(lexeme), pos(pos)
         {
             pool.mark(this);
         }
 
         std::string repr() const {
-            return std::format("Token(type: {}, content: '{}', pos: {}:{}:{})",
+            return std::format("Token(type: {}, lexeme: '{}', pos: {}:{}:{})",
                                to_string(type),
-                               content,
+                               lexeme,
                                pos != nullptr ? pos->path : "<unknown>",
                                pos != nullptr ? pos->line : -1,
                                pos != nullptr ? pos->column : -1);
